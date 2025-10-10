@@ -1,70 +1,66 @@
-# Ingestion from RSS feeds
-# rss_guidance_ingest.py
+import sys, json, feedparser, yaml, datetime as dt, zoneinfo, hashlib
+from typing import Iterator, Dict, Any, List, Set
 
-import feedparser
-import yaml
-import hashlib
-import datetime as dt
-import zoneinfo
-from typing import List, Dict, Any
-from dotenv import load_dotenv
-import os
+TZ = zoneinfo.ZoneInfo("Asia/Kuala_Lumpur")
 
-# ────────────────────────────── Utilities ──────────────────────────────
-def make_uid(parts: List[str]) -> str:
-    """Create a stable short hash for deduplication."""
-    s = "|".join(p or "" for p in parts)
-    return hashlib.sha256(s.encode()).hexdigest()[:40]
-
-def now_iso() -> str:
-    tz = zoneinfo.ZoneInfo(os.getenv("TIMEZONE", "Asia/Kuala_Lumpur"))
-    return dt.datetime.now(tz=tz).isoformat()
-
-# ────────────────────────────── Core logic ──────────────────────────────
+# ────────────────────────────── Config ──────────────────────────────
 def load_feeds(path: str = "./sources.yaml") -> List[Dict[str, Any]]:
-    """Read list of RSS feeds from sources.yaml"""
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
-    return data.get("feeds", [])
+    return [f for f in data.get("feeds", []) if f.get("id") and f.get("url")]
 
-def entry_to_guidance(source_id: str, entry: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize one RSS entry → GuidanceEvent dict"""
-    title = entry.get("title", "")
-    link = entry.get("link") or entry.get("id")
-    summary = entry.get("summary") or entry.get("description", "")
-    published = entry.get("published") or entry.get("updated")
+# ────────────────────────────── Pointer event ───────────────────────
+def make_uid(parts: List[str]) -> str:
+    s = "\x1f".join(p or "" for p in parts)  # unit-separator join
+    return hashlib.sha256(s.encode()).hexdigest()[:40]
 
-    uid = make_uid([source_id, title, link or "", published or ""])
+def entry_to_pointer(source_id: str, e: Dict[str, Any]) -> Dict[str, Any]:
+    title     = e.get("title") or ""
+    link      = e.get("link") or e.get("id") or ""
+    published = e.get("published") or e.get("updated") or None
+    uid       = make_uid([source_id, title, link, published or ""])
     return {
         "uid": uid,
         "source_id": source_id,
         "title": title,
         "link": link,
-        "summary": summary,
-        "published_at": published,
-        "status": "pending",
-        "fetched_at": None,
-        "discovered_at": now_iso(),
+        "published_at": published,                 # when publisher says it went live
+        "discovered_at": dt.datetime.now(TZ).isoformat(),  # when WE saw it
+        "status": "pending",                       # to be consumed by the fetcher
+        # optional tiny hint payloads (kept small):
+        "summary_hint": e.get("summary") or e.get("description") or None,
+        "categories": [t.get("term") for t in e.get("tags", [])] if e.get("tags") else None,
     }
 
-def ingest_guidance(sources_path: str = "./sources.yaml") -> List[Dict[str, Any]]:
-    """Parse all configured RSS feeds into guidance events"""
-    feeds = load_feeds(sources_path)
-    all_events = []
-
-    for src in feeds:
-        sid = src["id"]
-        url = src["url"]
-        print(f"Fetching {sid} → {url}")
+def iter_pointer_events(sources_path: str = "./sources.yaml") -> Iterator[Dict[str, Any]]:
+    for src in load_feeds(sources_path):
+        sid, url = src["id"], src["url"]
         parsed = feedparser.parse(url)
-        entries = parsed.entries or []
-        for e in entries:
-            all_events.append(entry_to_guidance(sid, e))
-    return all_events
+        for e in (parsed.entries or []):
+            link = e.get("link") or e.get("id")
+            if not link:
+                continue
+            yield entry_to_pointer(sid, e)
 
-# ────────────────────────────── Main runner ──────────────────────────────
+# ────────────────────────────── Main (produce a queue) ──────────────
 if __name__ == "__main__":
-    load_dotenv()
-    events = ingest_guidance()
-    print(f"\nGenerated {len(events)} guidance events.")
-    print("Sample:", events[0] if events else "None")
+    sources_path = sys.argv[1] if len(sys.argv) > 1 else "./sources.yaml"
+    out_path     = sys.argv[2] if len(sys.argv) > 2 else None  # e.g., ./queue/pointers.jsonl
+
+    seen: Set[str] = set()  # in-run dedupe; your fetcher will do DB-level dedupe later
+    if out_path:
+        # append to a JSONL queue file
+        with open(out_path, "a", encoding="utf-8") as out:
+            for ev in iter_pointer_events(sources_path):
+                if ev["uid"] in seen: 
+                    continue
+                seen.add(ev["uid"])
+                out.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        print(f"Wrote {len(seen)} pointer events → {out_path}")
+    else:
+        # print to stdout (pipe into the next stage if you like)
+        for ev in iter_pointer_events(sources_path):
+            if ev["uid"] in seen: 
+                continue
+            seen.add(ev["uid"])
+            print(json.dumps(ev, ensure_ascii=False))
