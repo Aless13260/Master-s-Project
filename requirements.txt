@@ -1,0 +1,4 @@
+feedparser==6.0.11
+pyyaml
+python-dotenv
+llama-index-core

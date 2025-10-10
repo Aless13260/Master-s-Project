@@ -1,0 +1,10 @@
+feeds:
+  - id: businesswire
+    label: "BusinessWire All News"
+    url: "https://www.businesswire.com/portal/site/home/rss/"
+    tags: [press_release]
+
+  - id: aapl_ir
+    label: "Apple IR News"
+    url: "https://investor.apple.com/rss/news-releases.xml"
+    tags: [ir]
