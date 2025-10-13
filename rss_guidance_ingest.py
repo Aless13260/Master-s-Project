@@ -45,9 +45,9 @@ def iter_pointer_events(sources_path: str = "./sources.yaml") -> Iterator[Dict[s
 # ────────────────────────────── Main (produce a queue) ──────────────
 if __name__ == "__main__":
     sources_path = sys.argv[1] if len(sys.argv) > 1 else "./sources.yaml"
-    out_path     = sys.argv[2] if len(sys.argv) > 2 else None  # e.g., ./queue/pointers.jsonl
+    out_path     = r"C:\Users\aless\Github\FinanceProject\pointerEvents\pointers.json"
 
-    seen: Set[str] = set()  # in-run dedupe; your fetcher will do DB-level dedupe later
+    seen: Set[str] = set()  # in-run dedupe; 
     if out_path:
         # append to a JSONL queue file
         with open(out_path, "a", encoding="utf-8") as out:
