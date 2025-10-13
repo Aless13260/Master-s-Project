@@ -1,10 +1,7 @@
 feeds:
-  - id: businesswire
-    label: "BusinessWire All News"
-    url: "https://www.businesswire.com/portal/site/home/rss/"
-    tags: [press_release]
+  - id: SEC_all
+    label: "All recent SEC filings"
+    url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&output=rss"
 
-  - id: aapl_ir
-    label: "Apple IR News"
-    url: "https://investor.apple.com/rss/news-releases.xml"
-    tags: [ir]
+    tags: [filing]
+

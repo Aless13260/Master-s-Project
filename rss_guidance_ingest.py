@@ -1,6 +1,6 @@
 import sys, json, feedparser, yaml, datetime as dt, zoneinfo, hashlib
 from typing import Iterator, Dict, Any, List, Set
-
+import requests
 TZ = zoneinfo.ZoneInfo("Asia/Kuala_Lumpur")
 
 # ────────────────────────────── Config ──────────────────────────────
@@ -8,6 +8,23 @@ def load_feeds(path: str = "./sources.yaml") -> List[Dict[str, Any]]:
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     return [f for f in data.get("feeds", []) if f.get("id") and f.get("url")]
+
+ 
+UA = "AgenticFinanceResearchBot/0.1 (contact: aless13260@gmail.com)"
+
+def fetch_feed(url: str) -> bytes | None:
+    """Fetch RSS feed bytes with polite headers & retries."""
+    try:
+        headers = {
+            "User-Agent": UA,
+            "Accept": "application/rss+xml, application/xml;q=0.9,*/*;q=0.8",
+        }
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        return resp.content
+    except Exception as e:
+        print(f"[WARN] Could not fetch {url}: {e}")
+        return None
 
 # ────────────────────────────── Pointer event ───────────────────────
 def make_uid(parts: List[str]) -> str:
@@ -35,7 +52,11 @@ def entry_to_pointer(source_id: str, e: Dict[str, Any]) -> Dict[str, Any]:
 def iter_pointer_events(sources_path: str = "./sources.yaml") -> Iterator[Dict[str, Any]]:
     for src in load_feeds(sources_path):
         sid, url = src["id"], src["url"]
-        parsed = feedparser.parse(url)
+        print(f"[DEBUG] Fetching feed: {sid} -> {url}")
+        content = fetch_feed(url)
+        if not content:
+            continue
+        parsed = feedparser.parse(content)
         for e in (parsed.entries or []):
             link = e.get("link") or e.get("id")
             if not link:
@@ -47,20 +68,37 @@ if __name__ == "__main__":
     sources_path = sys.argv[1] if len(sys.argv) > 1 else "./sources.yaml"
     out_path     = r"C:\Users\aless\Github\FinanceProject\pointerEvents\pointers.json"
 
-    seen: Set[str] = set()  # in-run dedupe; 
+    seen: Set[str] = set()
+    # Persistent deduplication: read existing UIDs from file
+    try:
+        with open(out_path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                    uid = obj.get("uid")
+                    if uid:
+                        seen.add(uid)
+                except Exception:
+                    continue
+    except FileNotFoundError:
+        pass
+
     if out_path:
         # append to a JSONL queue file
         with open(out_path, "a", encoding="utf-8") as out:
+            new_count = 0
             for ev in iter_pointer_events(sources_path):
-                if ev["uid"] in seen: 
+                if ev["uid"] in seen:
                     continue
                 seen.add(ev["uid"])
                 out.write(json.dumps(ev, ensure_ascii=False) + "\n")
-        print(f"Wrote {len(seen)} pointer events → {out_path}")
+                new_count += 1
+        print(f"Wrote {new_count} new pointer events → {out_path}")
     else:
         # print to stdout (pipe into the next stage if you like)
         for ev in iter_pointer_events(sources_path):
-            if ev["uid"] in seen: 
+            if ev["uid"] in seen:
                 continue
             seen.add(ev["uid"])
             print(json.dumps(ev, ensure_ascii=False))
+    
