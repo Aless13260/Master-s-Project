@@ -11,3 +11,5 @@ __pycache__/
 *.json
 *.db
 *.sqlite
+# Local tooling and analysis outputs
+tools/

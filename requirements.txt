@@ -5,3 +5,4 @@ llama-index-core
 requests
 trafilatura
 pypdf
+beautifulsoup4

@@ -14,6 +14,9 @@ import time
 import sys
 from pathlib import Path
 from typing import Iterable, Dict, Any
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urljoin
 import requests
 import trafilatura
 import datetime as dt
@@ -62,7 +65,25 @@ def extract_with_trafilatura(html: str, url: str) -> str | None:
         return None
 
 
-def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH) -> int:
+def find_exhibit_from_index(html: str, base_url: str) -> str | None:
+    """Parse a filing index page and try to find the first exhibit URL that looks like a press release or EX-99."""
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        # look for <a> tags with filenames or link text matching our patterns
+        patterns = re.compile(r"(ex-?99|exhibit\s*99|press[\s_-]*release|earnings|results|primary|ex-?101)", re.I)
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            txt = (a.get_text(" ") or "").strip()
+            if patterns.search(href) or patterns.search(txt):
+                # build absolute URL
+                return urljoin(base_url, href)
+
+    except Exception:
+        return None
+    return None
+
+
+def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_candidates: bool = True, mark_skipped: bool = False) -> int:
     seen = set()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Load already processed UIDs to avoid re-processing
@@ -77,6 +98,9 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH) -> int:
                 except Exception:
                     continue
 
+    # guidance keywords used to decide whether to follow a pointer
+    guidance_patterns = ("8-k", "8k", "press release", "press-release", "earnings", "results", "guidance", "outlook")
+
     total = 0
     added = 0
     with out_path.open("a", encoding="utf-8") as out:
@@ -87,6 +111,37 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH) -> int:
                 continue
             link = p.get("link")
             if not link:
+                continue
+            # decide whether this pointer is a candidate by title/summary (backwards compatible)
+            is_candidate = False
+            if p.get("guidance_candidate") is not None:
+                is_candidate = bool(p.get("guidance_candidate"))
+            else:
+                title = (p.get("title") or "").lower()
+                summary = (p.get("summary_hint") or "").lower()
+                if any(k in title or k in summary for k in guidance_patterns):
+                    is_candidate = True
+
+            if only_candidates and not is_candidate:
+                # mark as seen so we don't keep reprocessing uninteresting pointers
+                seen.add(uid)
+                if mark_skipped:
+                    item: Dict[str, Any] = {
+                        "uid": uid,
+                        "source_id": p.get("source_id"),
+                        "link": link,
+                        "title": p.get("title"),
+                        "published_at": p.get("published_at"),
+                        "discovered_at": p.get("discovered_at"),
+                        "fetched_at": dt.datetime.now(TZ).isoformat(),
+                        "fetch_status": "skipped_not_candidate",
+                        "extracted_text": None,
+                    }
+                    out.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    added += 1
+                else:
+                    # quiet skip
+                    print(f"[SKIP] not a candidate: {uid} - {p.get('title')}")
                 continue
             item: Dict[str, Any] = {
                 "uid": uid,
@@ -124,6 +179,18 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH) -> int:
                 continue
 
             html = resp.text
+
+            # If we fetched a filing index page (typical EDGAR landing ending with -index.htm),
+            # attempt to find an exhibit (EX-99 / press release / primary document) and follow it.
+            if link.lower().endswith("-index.htm") or "-index.htm" in link.lower():
+                exhibit_url = find_exhibit_from_index(html, resp.url)
+                if exhibit_url and exhibit_url != resp.url:
+                    # try fetching the exhibit
+                    ex_resp = fetch_url(exhibit_url)
+                    if ex_resp and "pdf" not in (ex_resp.headers.get("Content-Type", "") or ""):
+                        html = ex_resp.text
+                        link = exhibit_url
+
             text = extract_with_trafilatura(html, link)
             if text:
                 item["fetch_status"] = "ok"

@@ -1,6 +1,10 @@
 feeds:
-  - id: SEC_atom
-    label: "All recent SEC filings"
-    url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&output=rss"
+- id: microsoft_news
+  label: "Microsoft newsroom (press releases)"
+  url: "https://news.microsoft.com/feed/"
+  tags: [press, investor-relations]
 
-    tags: [filing]
+- id: apple_newsroom
+  label: "Apple Newsroom (press releases)"
+  url: "https://www.apple.com/newsroom/rss-feed.rss"
+  tags: [press, newsroom]
