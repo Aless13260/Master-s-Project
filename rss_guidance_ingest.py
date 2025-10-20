@@ -70,35 +70,24 @@ if __name__ == "__main__":
 
     seen: Set[str] = set()
     # Persistent deduplication: read existing UIDs from file
-    try:
-        with open(out_path, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    obj = json.loads(line)
-                    uid = obj.get("uid")
-                    if uid:
-                        seen.add(uid)
-                except Exception:
-                    continue
-    except FileNotFoundError:
-        pass
+    with open(out_path, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                obj = json.loads(line)
+                uid = obj.get("uid")
+                if uid:
+                    seen.add(uid)
+            except Exception:
+                continue
 
-    if out_path:
-        # append to a JSONL queue file
-        with open(out_path, "a", encoding="utf-8") as out:
-            new_count = 0
-            for ev in iter_pointer_events(sources_path):
-                if ev["uid"] in seen:
-                    continue
-                seen.add(ev["uid"])
-                out.write(json.dumps(ev, ensure_ascii=False) + "\n")
-                new_count += 1
-        print(f"Wrote {new_count} new pointer events → {out_path}")
-    else:
-        # print to stdout (pipe into the next stage if you like)
+    # append to a JSONL queue file
+    with open(out_path, "a", encoding="utf-8") as out:
+        new_count = 0
         for ev in iter_pointer_events(sources_path):
             if ev["uid"] in seen:
                 continue
             seen.add(ev["uid"])
-            print(json.dumps(ev, ensure_ascii=False))
-    
+            out.write(json.dumps(ev, ensure_ascii=False) + "\n")
+            new_count += 1
+    print(f"Wrote {new_count} new pointer events → {out_path}")
+

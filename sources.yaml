@@ -1,7 +1,6 @@
 feeds:
-  - id: SEC_all
+  - id: SEC_atom
     label: "All recent SEC filings"
     url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&output=rss"
 
     tags: [filing]
-
