@@ -14,19 +14,25 @@ import time
 import sys
 from pathlib import Path
 from typing import Iterable, Dict, Any
-from bs4 import BeautifulSoup
 import re
-from urllib.parse import urljoin
 import requests
 import trafilatura
 import datetime as dt
 import zoneinfo
+import hashlib
+import tempfile
+import os
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 TZ = zoneinfo.ZoneInfo("Asia/Kuala_Lumpur")
 UA = "AgenticFinanceResearchBot/0.1 (contact: aless13260@gmail.com)"
 
 POINTERS_PATH = Path("pointerEvents") / "pointers.json"
 OUT_PATH = Path("pointerEvents") / "contents.jsonl"
+CACHE_PATH = Path("pointerEvents") / "fetch_cache.json"
 
 
 def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
@@ -64,27 +70,91 @@ def extract_with_trafilatura(html: str, url: str) -> str | None:
     except Exception:
         return None
 
+        # def find_exhibit_from_index(html: str, base_url: str) -> str | None:
+        #     """Parse a filing index page and try to find the first exhibit URL that looks like a press release or EX-99."""
+        #     try:
+        #         soup = BeautifulSoup(html, "html.parser")
+        #         # look for <a> tags with filenames or link text matching our patterns
+        #         patterns = re.compile(r"(ex-?99|exhibit\s*99|press[\s_-]*release|earnings|results|primary|ex-?101)", re.I)
+        #         for a in soup.find_all("a", href=True):
+        #             href = a["href"]
+        #             txt = (a.get_text(" ") or "").strip()
+        #             if patterns.search(href) or patterns.search(txt):
+        #                 # build absolute URL
+        #                 return urljoin(base_url, href)
+        # 
+        #     except Exception:
+        #         return None
+        #     return None
 
-def find_exhibit_from_index(html: str, base_url: str) -> str | None:
-    """Parse a filing index page and try to find the first exhibit URL that looks like a press release or EX-99."""
+def find_sublinks_in_text(extracted_text: str, base_url: str) -> list[Dict[str, Any]]:
+    """Find URLs in extracted text and return them as sublink dictionaries.
+    
+    Args:
+        extracted_text: The main extracted text content
+        base_url: Base URL to resolve relative links
+        
+    Returns:
+        List of sublink dictionaries with url, extracted_text, fetch_status, similarity_to_main fields
+    """
+    if not extracted_text:
+        return []
+    
+    # Regex pattern to find URLs in text
+    url_pattern = re.compile(
+        r'https?://[^\s<>"\']+|www\.[^\s<>"\']+',
+        re.IGNORECASE
+    )
+    
+    urls = url_pattern.findall(extracted_text)
+    sublinks = []
+    
+    for url in urls:
+        # Clean up the URL (remove trailing punctuation)
+        url = re.sub(r'[.,;:!?)]+$', '', url)
+        
+        # Add protocol if missing for www links
+        if url.lower().startswith('www.'):
+            url = 'https://' + url
+            
+        # Skip if it looks like a PDF
+        if looks_like_pdf(url):
+            continue
+            
+        # Create sublink dictionary
+        sublink = {
+            "url": url,
+            "extracted_text": None,
+            "fetch_status": "pending",
+            "similarity_to_main": 0.0
+        }
+        sublinks.append(sublink)
+    
+    return sublinks
+
+def compute_similarity(text1: str, text2: str) -> float:
+    """Compute TF-IDF cosine similarity between two texts."""
+    if not text1 or not text2:
+        return 0.0
+    
     try:
-        soup = BeautifulSoup(html, "html.parser")
-        # look for <a> tags with filenames or link text matching our patterns
-        patterns = re.compile(r"(ex-?99|exhibit\s*99|press[\s_-]*release|earnings|results|primary|ex-?101)", re.I)
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            txt = (a.get_text(" ") or "").strip()
-            if patterns.search(href) or patterns.search(txt):
-                # build absolute URL
-                return urljoin(base_url, href)
-
+        vectorizer = TfidfVectorizer()
+        vectors = vectorizer.fit_transform([text1, text2])
+        similarity = cosine_similarity(vectors[0:1], vectors[1:2])[0][0]
+        return float(similarity)
     except Exception:
-        return None
-    return None
+        return 0.0
 
-
-def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_candidates: bool = True, mark_skipped: bool = False) -> int:
+def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_candidates: bool = True, mark_skipped: bool = False, delay: float = 1) -> int:
     seen = set()
+    # load cache mapping of html_hash -> content_hash and content_hash -> metadata
+    cache: Dict[str, Any] = {"html_to_content": {}, "content_meta": {}}
+    if CACHE_PATH.exists():
+        try:
+            with CACHE_PATH.open("r", encoding="utf-8") as cf:
+                cache = json.load(cf)
+        except Exception:
+            cache = {"html_to_content": {}, "content_meta": {}}
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # Load already processed UIDs to avoid re-processing
     if out_path.exists():
@@ -135,7 +205,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                         "discovered_at": p.get("discovered_at"),
                         "fetched_at": dt.datetime.now(TZ).isoformat(),
                         "fetch_status": "skipped_not_candidate",
-                        "extracted_text": None,
+                        "extracted_text": None
                     }
                     out.write(json.dumps(item, ensure_ascii=False) + "\n")
                     added += 1
@@ -153,6 +223,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                 "fetched_at": dt.datetime.now(TZ).isoformat(),
                 "fetch_status": "skipped",
                 "extracted_text": None,
+                "sublinks": [{"url": "...", "extracted_text": "...", "fetch_status": "ok", "similarity_to_main": 0.85}]
             }
 
             if looks_like_pdf(link):
@@ -178,31 +249,109 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                 seen.add(uid)
                 continue
 
+            # Compute SHA256 of raw response content (bytes). Use this to skip identical HTML quickly.
+            html_bytes = resp.content
+            try:
+                html_hash = hashlib.sha256(html_bytes).hexdigest()
+            except Exception:
+                html_hash = None
+
+            # If we've seen this exact HTML before, map to existing content if available and skip re-extraction
+            mapped_content_hash = None
+            if html_hash and html_hash in cache.get("html_to_content", {}):
+                mapped_content_hash = cache["html_to_content"][html_hash]
+                meta = cache.get("content_meta", {}).get(mapped_content_hash)
+                if meta:
+                    # Write a duplicate record pointing to existing content
+                    item["fetch_status"] = "duplicate_html_skipped"
+                    item["extracted_text"] = None
+                    item["duplicate_of"] = meta.get("uid")
+                    item["content_hash"] = mapped_content_hash
+                    out.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    added += 1
+                    seen.add(uid)
+                    # persist cache and continue
+                    try:
+                        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=CACHE_PATH.parent) as tf:
+                            json.dump(cache, tf, ensure_ascii=False)
+                            tmpname = tf.name
+                        os.replace(tmpname, CACHE_PATH)
+                    except Exception:
+                        pass
+                    # polite short delay
+                    time.sleep(delay)
+                    continue
+
             html = resp.text
 
-            # If we fetched a filing index page (typical EDGAR landing ending with -index.htm),
-            # attempt to find an exhibit (EX-99 / press release / primary document) and follow it.
-            if link.lower().endswith("-index.htm") or "-index.htm" in link.lower():
-                exhibit_url = find_exhibit_from_index(html, resp.url)
-                if exhibit_url and exhibit_url != resp.url:
-                    # try fetching the exhibit
-                    ex_resp = fetch_url(exhibit_url)
-                    if ex_resp and "pdf" not in (ex_resp.headers.get("Content-Type", "") or ""):
-                        html = ex_resp.text
-                        link = exhibit_url
-
+            # Text extraction main body
             text = extract_with_trafilatura(html, link)
             if text:
                 item["fetch_status"] = "ok"
                 item["extracted_text"] = text
             else:
                 item["fetch_status"] = "extract_failed"
+            
+            # Find sublinks in the extracted text
+            item["sublinks"].extend(find_sublinks_in_text(text or "", link))
 
+            # Add sublink extraction (if any)
+            if item["sublinks"]:
+                for sublink in item["sublinks"]:
+                    # Fetch the sublink content
+                    sub_resp = fetch_url(sublink["url"])
+                    if sub_resp:
+                        subtext = extract_with_trafilatura(sub_resp.text, sublink["url"])
+                    else:
+                        subtext = None
+                    sublink["extracted_text"] = subtext
+                    sublink["fetch_status"] = "ok" if subtext else "extract_failed"
+                    sublink["similarity_to_main"] = compute_similarity(text or "", subtext or "")
+            # Compute a content hash of the normalized extracted text and update cache
+            content_hash = None
+            if text:
+                try:
+                    # Normalize whitespace and trim
+                    normalized = " ".join(text.split())
+                    content_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+                except Exception:
+                    content_hash = None
+
+            if content_hash:
+                # If we have seen this content before, avoid storing duplicate extracted text
+                if content_hash in cache.get("content_meta", {}):
+                    meta = cache["content_meta"][content_hash]
+                    item["fetch_status"] = "duplicate_content_skipped"
+                    item["extracted_text"] = None
+                    item["duplicate_of"] = meta.get("uid")
+                    item["content_hash"] = content_hash
+                else:
+                    # store metadata for this content so future identical pages can be skipped
+                    cache.setdefault("content_meta", {})[content_hash] = {
+                        "uid": uid,
+                        "title": item.get("title"),
+                        "source_id": item.get("source_id"),
+                        "fetched_at": item.get("fetched_at")
+                    }
+                    item["content_hash"] = content_hash
+
+                # Map html_hash -> content_hash for quicker detection next time
+                if html_hash:
+                    cache.setdefault("html_to_content", {})[html_hash] = content_hash
+
+            # persist cache after each processed pointer (best-effort)
+            try:
+                with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=CACHE_PATH.parent) as tf:
+                    json.dump(cache, tf, ensure_ascii=False)
+                    tmpname = tf.name
+                os.replace(tmpname, CACHE_PATH)
+            except Exception:
+                pass
             out.write(json.dumps(item, ensure_ascii=False) + "\n")
             added += 1
             seen.add(uid)
             # polite short delay
-            time.sleep(0.2)
+            time.sleep(delay)
 
     print(f"Processed {total} pointers, wrote {added} content records → {out_path}")
     return added
@@ -210,4 +359,5 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
 
 if __name__ == "__main__":
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else POINTERS_PATH
-    main(path)
+    # You can set a custom delay here, e.g., delay=0.05 for faster processing
+    main(path, delay=0.2)
