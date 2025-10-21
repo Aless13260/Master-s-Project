@@ -145,13 +145,15 @@ def compute_similarity(text1: str, text2: str) -> float:
     except Exception:
         return 0.0
 
-def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_candidates: bool = True, mark_skipped: bool = False, delay: float = 1) -> int:
+def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_candidates: bool = True, mark_skipped: bool = False, delay: float = 1, no_cache: bool = False, cache_path: Path | None = None) -> int:
     seen = set()
+    # choose cache path
+    chosen_cache = Path(cache_path) if cache_path else CACHE_PATH
     # load cache mapping of html_hash -> content_hash and content_hash -> metadata
     cache: Dict[str, Any] = {"html_to_content": {}, "content_meta": {}}
-    if CACHE_PATH.exists():
+    if not no_cache and chosen_cache.exists():
         try:
-            with CACHE_PATH.open("r", encoding="utf-8") as cf:
+            with chosen_cache.open("r", encoding="utf-8") as cf:
                 cache = json.load(cf)
         except Exception:
             cache = {"html_to_content": {}, "content_meta": {}}
@@ -223,7 +225,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                 "fetched_at": dt.datetime.now(TZ).isoformat(),
                 "fetch_status": "skipped",
                 "extracted_text": None,
-                "sublinks": [{"url": "...", "extracted_text": "...", "fetch_status": "ok", "similarity_to_main": 0.85}]
+                "sublinks": []
             }
 
             if looks_like_pdf(link):
@@ -258,7 +260,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
 
             # If we've seen this exact HTML before, map to existing content if available and skip re-extraction
             mapped_content_hash = None
-            if html_hash and html_hash in cache.get("html_to_content", {}):
+            if not no_cache and html_hash and html_hash in cache.get("html_to_content", {}):
                 mapped_content_hash = cache["html_to_content"][html_hash]
                 meta = cache.get("content_meta", {}).get(mapped_content_hash)
                 if meta:
@@ -270,14 +272,15 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                     out.write(json.dumps(item, ensure_ascii=False) + "\n")
                     added += 1
                     seen.add(uid)
-                    # persist cache and continue
-                    try:
-                        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=CACHE_PATH.parent) as tf:
-                            json.dump(cache, tf, ensure_ascii=False)
-                            tmpname = tf.name
-                        os.replace(tmpname, CACHE_PATH)
-                    except Exception:
-                        pass
+                    # persist cache and continue (only if caching enabled)
+                    if not no_cache:
+                        try:
+                            with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=chosen_cache.parent) as tf:
+                                json.dump(cache, tf, ensure_ascii=False)
+                                tmpname = tf.name
+                            os.replace(tmpname, chosen_cache)
+                        except Exception:
+                            pass
                     # polite short delay
                     time.sleep(delay)
                     continue
@@ -319,7 +322,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
 
             if content_hash:
                 # If we have seen this content before, avoid storing duplicate extracted text
-                if content_hash in cache.get("content_meta", {}):
+                if not no_cache and content_hash in cache.get("content_meta", {}):
                     meta = cache["content_meta"][content_hash]
                     item["fetch_status"] = "duplicate_content_skipped"
                     item["extracted_text"] = None
@@ -327,26 +330,28 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                     item["content_hash"] = content_hash
                 else:
                     # store metadata for this content so future identical pages can be skipped
-                    cache.setdefault("content_meta", {})[content_hash] = {
-                        "uid": uid,
-                        "title": item.get("title"),
-                        "source_id": item.get("source_id"),
-                        "fetched_at": item.get("fetched_at")
-                    }
+                    if not no_cache:
+                        cache.setdefault("content_meta", {})[content_hash] = {
+                            "uid": uid,
+                            "title": item.get("title"),
+                            "source_id": item.get("source_id"),
+                            "fetched_at": item.get("fetched_at")
+                        }
                     item["content_hash"] = content_hash
 
                 # Map html_hash -> content_hash for quicker detection next time
-                if html_hash:
+                if html_hash and not no_cache:
                     cache.setdefault("html_to_content", {})[html_hash] = content_hash
 
             # persist cache after each processed pointer (best-effort)
-            try:
-                with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=CACHE_PATH.parent) as tf:
-                    json.dump(cache, tf, ensure_ascii=False)
-                    tmpname = tf.name
-                os.replace(tmpname, CACHE_PATH)
-            except Exception:
-                pass
+            if not no_cache:
+                try:
+                    with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=chosen_cache.parent) as tf:
+                        json.dump(cache, tf, ensure_ascii=False)
+                        tmpname = tf.name
+                    os.replace(tmpname, chosen_cache)
+                except Exception:
+                    pass
             out.write(json.dumps(item, ensure_ascii=False) + "\n")
             added += 1
             seen.add(uid)

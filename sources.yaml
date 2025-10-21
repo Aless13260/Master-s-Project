@@ -8,3 +8,33 @@ feeds:
   label: "Apple Newsroom (press releases)"
   url: "https://www.apple.com/newsroom/rss-feed.rss"
   tags: [press, newsroom]
+
+- id: nvidia_investor_resources
+  label: "NVIDIA Investor Resources"
+  url: "https://investor.nvidia.com/investor-resources/rss/default.aspx"
+  tags: [press]
+
+  - id: Tesla_Businesswire_Feed
+  label: "Tesla Businesswire Feed"
+  url: "https://www.businesswire.com/portal/site/home/news/?ticker=TSLA"
+  tags: [press]
+    
+  - id: Amazon
+  label: "Amazon news releases"
+  url: "https://press.aboutamazon.com/rss/news-releases.xml"
+  tags: [press]
+    
+  - id: META
+  label: "Meta news and events"
+  url: "https://investor.fb.com/rss/news-and-events/default.aspx"
+  tags: [press]
+    
+  - id: Alphabet
+  label: "Alphabet Investor Relations"
+  url: "https://abc.xyz/investor/feed/"
+  tags: [press]
+    
+  - id: JPMorgan  
+  label: "JPMorgan Chase Newsroom"
+  url: "https://www.jpmorganchase.com/news/feed"
+  tags: [press]
