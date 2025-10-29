@@ -7,3 +7,6 @@ trafilatura
 pypdf
 beautifulsoup4
 scikit-learn
+numpy
+requests
+bs4

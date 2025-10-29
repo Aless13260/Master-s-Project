@@ -22,6 +22,8 @@ import zoneinfo
 import hashlib
 import tempfile
 import os
+from urllib.parse import urljoin
+from bs4 import BeautifulSoup
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -55,37 +57,61 @@ def looks_like_pdf(url: str) -> bool:
 
 def fetch_url(url: str, timeout: int = 15) -> requests.Response | None:
     headers = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
+    # SEC.gov requires lower request rates and proper identification
+    # They allow up to 10 req/sec but we'll be more conservative
+    if "sec.gov" in url.lower():
+        headers["User-Agent"] = "AgenticFinanceResearchBot/0.1 (Academic Research; contact: aless13260@gmail.com)"
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers["Accept-Encoding"] = "gzip, deflate"
+        headers["Host"] = "www.sec.gov"
+    
     try:
-        r = requests.get(url, headers=headers, timeout=timeout)
+        r = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
         r.raise_for_status()
+        # Check if SEC blocked us
+        if "sec.gov" in url.lower() and "automated tool" in r.text.lower():
+            print(f"[WARN] SEC.gov blocking automated access to: {url}")
+            return None
         return r
-    except Exception:
+    except Exception as e:
+        print(f"[WARN] Fetch failed for {url}: {e}")
         return None
 
 
 def extract_with_trafilatura(html: str, url: str) -> str | None:
     try:
         result = trafilatura.extract(html, url=url, include_comments=False, include_tables=False)
+        # For SEC exhibits, if trafilatura fails, try BeautifulSoup fallback
+        if not result and "sec.gov" in url.lower():
+            soup = BeautifulSoup(html, "html.parser")
+            # Remove script and style elements
+            for script in soup(["script", "style"]):
+                script.decompose()
+            # Get text
+            text = soup.get_text(separator="\n", strip=True)
+            # Clean up whitespace
+            lines = (line.strip() for line in text.splitlines())
+            text = "\n".join(line for line in lines if line)
+            return text if len(text) > 100 else None
         return result
     except Exception:
         return None
 
-        # def find_exhibit_from_index(html: str, base_url: str) -> str | None:
-        #     """Parse a filing index page and try to find the first exhibit URL that looks like a press release or EX-99."""
-        #     try:
-        #         soup = BeautifulSoup(html, "html.parser")
-        #         # look for <a> tags with filenames or link text matching our patterns
-        #         patterns = re.compile(r"(ex-?99|exhibit\s*99|press[\s_-]*release|earnings|results|primary|ex-?101)", re.I)
-        #         for a in soup.find_all("a", href=True):
-        #             href = a["href"]
-        #             txt = (a.get_text(" ") or "").strip()
-        #             if patterns.search(href) or patterns.search(txt):
-        #                 # build absolute URL
-        #                 return urljoin(base_url, href)
-        # 
-        #     except Exception:
-        #         return None
-        #     return None
+def find_exhibit_from_index(html: str, base_url: str) -> str | None:
+    """Parse a filing index page and try to find the first exhibit URL that looks like a press release or EX-99."""
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        # look for <a> tags with filenames or link text matching our patterns
+        patterns = re.compile(r"(ex-?99|exhibit\s*99|press[\s_-]*release|earnings|results)", re.I)
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            txt = (a.get_text(" ") or "").strip()
+            if patterns.search(href) or patterns.search(txt):
+                # build absolute URL
+                return urljoin(base_url, href)
+    except Exception:
+        return None
+    return None
 
 def find_sublinks_in_text(extracted_text: str, base_url: str) -> list[Dict[str, Any]]:
     """Find URLs in extracted text and return them as sublink dictionaries.
@@ -287,6 +313,24 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
 
             html = resp.text
 
+            # If this is an SEC EDGAR index page (8-K, 10-Q, etc.), try to find and follow the Exhibit 99 link
+            if "sec.gov" in link.lower() and "Archives/edgar" in link:
+                exhibit_url = find_exhibit_from_index(html, link)
+                if exhibit_url:
+                    print(f"[SEC] Found exhibit: {exhibit_url}")
+                    time.sleep(0.3)  # SEC asks for <10 req/sec, we do ~3/sec to stay well under limit
+                    exhibit_resp = fetch_url(exhibit_url)
+                    if exhibit_resp:
+                        # Skip if it's a PDF
+                        if "pdf" not in exhibit_resp.headers.get("Content-Type", "").lower():
+                            html = exhibit_resp.text
+                            link = exhibit_url  # Update link to point to the actual exhibit
+                            print(f"[SEC] Using exhibit content from {exhibit_url}")
+                        else:
+                            print(f"[SEC] Exhibit is PDF, skipping: {exhibit_url}")
+                    else:
+                        print(f"[SEC] Failed to fetch exhibit: {exhibit_url}")
+
             # Text extraction main body
             text = extract_with_trafilatura(html, link)
             if text:
@@ -358,7 +402,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
             # polite short delay
             time.sleep(delay)
 
-    print(f"Processed {total} pointers, wrote {added} content records → {out_path}")
+    print(f"Processed {total} pointers, wrote {added} content records -> {out_path}")
     return added
 
 

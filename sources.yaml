@@ -1,4 +1,46 @@
 feeds:
+# SEC 8-K Filings (Current Reports - includes earnings, material events, guidance)
+- id: msft_8k
+  label: "Microsoft SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000789019&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+- id: aapl_8k
+  label: "Apple SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320193&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+- id: tsla_8k
+  label: "Tesla SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001318605&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+- id: nvda_8k
+  label: "NVIDIA SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001045810&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+- id: amzn_8k
+  label: "Amazon SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001018724&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+- id: meta_8k
+  label: "Meta SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001326801&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+- id: googl_8k
+  label: "Alphabet SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001652044&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+- id: jpm_8k
+  label: "JPMorgan Chase SEC 8-K Filings"
+  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000019617&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
+  tags: [sec, 8-k, filing]
+
+# Press release feeds (keeping for comparison)
 - id: microsoft_news
   label: "Microsoft newsroom (press releases)"
   url: "https://news.microsoft.com/feed/"
@@ -11,30 +53,5 @@ feeds:
 
 - id: nvidia_investor_resources
   label: "NVIDIA Investor Resources"
-  url: "https://investor.nvidia.com/investor-resources/rss/default.aspx"
-  tags: [press]
-
-  - id: Tesla_Businesswire_Feed
-  label: "Tesla Businesswire Feed"
-  url: "https://www.businesswire.com/portal/site/home/news/?ticker=TSLA"
-  tags: [press]
-    
-  - id: Amazon
-  label: "Amazon news releases"
-  url: "https://press.aboutamazon.com/rss/news-releases.xml"
-  tags: [press]
-    
-  - id: META
-  label: "Meta news and events"
-  url: "https://investor.fb.com/rss/news-and-events/default.aspx"
-  tags: [press]
-    
-  - id: Alphabet
-  label: "Alphabet Investor Relations"
-  url: "https://abc.xyz/investor/feed/"
-  tags: [press]
-    
-  - id: JPMorgan  
-  label: "JPMorgan Chase Newsroom"
-  url: "https://www.jpmorganchase.com/news/feed"
+  url: "https://nvidianews.nvidia.com/cats/press_release.xml"
   tags: [press]

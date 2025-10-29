@@ -62,6 +62,8 @@ def iter_pointer_events(sources_path: str = "./sources.yaml", allow_all: bool = 
         guidance_patterns = ("8-k", "8k", "press release", "press-release", "earnings", "results", "guidance", "outlook")
         # Common filing types we want to ignore (ownership/insider filings, etc.)
         skip_types = ("3", "4", "5", "13g", "13d", "144", "schedule 13g", "schedule 13d", "form 3", "form 4", "form 5", "ownership", "statement of changes", "statement of changes in beneficial ownership")
+        # High-value 8-K items that contain earnings/guidance
+        valuable_8k_items = ("item 2.02", "item 7.01", "item 8.01")
 
         for e in (parsed.entries or []):
             title_raw = (e.get("title") or "")
@@ -79,16 +81,38 @@ def iter_pointer_events(sources_path: str = "./sources.yaml", allow_all: bool = 
                 # fallback: first word
                 filing_token = title.split()[0] if title.split() else ""
 
+            # Check if this is an 8-K filing from a feed we added
+            is_8k_feed = sid.endswith("_8k")
+            is_8k_filing = "8-k" in title.lower() or filing_token == "8-k"
+            
+            # Check if this 8-K has valuable items (earnings, guidance, material events)
+            has_valuable_item = any(item in summary for item in valuable_8k_items)
+
+            # Determine if this should be marked as a guidance candidate
+            is_guidance_candidate = False
+            
             if not allow_all:
                 if filing_token in skip_types or any(st in title or st in summary for st in skip_types):
                     # definitely skip ownership/insider filings and other noisy types
                     continue
 
-                # now require at least one positive guidance-like pattern
-                if not any(p in title or p in summary for p in guidance_patterns):
+                # Auto-pass ALL 8-K filings from dedicated 8-K feeds
+                if is_8k_feed:
+                    is_guidance_candidate = True
+                # Or if it's an 8-K with valuable items
+                elif is_8k_filing and has_valuable_item:
+                    is_guidance_candidate = True
+                # Otherwise require at least one positive guidance-like pattern
+                elif any(p in title or p in summary for p in guidance_patterns):
+                    is_guidance_candidate = True
+                else:
+                    # Skip entries that don't match any criteria
                     continue
+            else:
+                # allow_all mode: accept everything but still mark 8-Ks as guidance candidates
+                is_guidance_candidate = is_8k_feed or is_8k_filing
 
-            yield entry_to_pointer(sid, e)
+            yield entry_to_pointer(sid, e, guidance_candidate=is_guidance_candidate)
 
 # ────────────────────────────── Main (produce a queue) ──────────────
 if __name__ == "__main__":
