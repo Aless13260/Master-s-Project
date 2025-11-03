@@ -2,11 +2,11 @@ feedparser==6.0.11
 pyyaml
 python-dotenv
 llama-index-core
+llama-index-llms-openai
 requests
 trafilatura
 pypdf
 beautifulsoup4
 scikit-learn
 numpy
-requests
 bs4

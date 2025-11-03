@@ -197,7 +197,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                     continue
 
     # guidance keywords used to decide whether to follow a pointer
-    guidance_patterns = ("8-k", "8k", "press release", "press-release", "earnings", "results", "guidance", "outlook")
+    guidance_patterns = ("8-k", "8k", "press release", "press-release", "earnings", "results", "guidance", "outlook", "results")
 
     total = 0
     added = 0
