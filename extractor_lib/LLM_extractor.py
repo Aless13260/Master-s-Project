@@ -62,42 +62,44 @@ class LLMExtractor:
             temperature: 0.0 for deterministic extraction
             max_retries: Number of retry attempts for failed LLM calls
         """
-        self.llm = setup_llm(provider=provider, model=model or "gpt-4o-mini", temperature=temperature)
+        # store config so we can reconfigure on errors (e.g., rate limits)
+        self.provider = provider
+        self.model = model or "gpt-4o-mini"
+        self.temperature = temperature
+        self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
         self.max_retries = max_retries
-        
+
         # System prompt for extraction
-        self.system_prompt = """You are a financial analyst specialized in extracting forward-looking financial guidance from corporate filings, earnings releases, and press statements.
+        # NOTE: the field names below match the Guidance pydantic model in
+        # extractor_lib.guidance_schema so the LLM's structured output can be
+        # parsed directly into that model. We intentionally omit 'ticker' to
+        # keep the model simpler; ticker can be mapped later from other sources.
+        self.system_prompt = """
+        You are a financial analyst specialized in extracting forward-looking financial guidance from corporate filings, earnings releases, and press statements.
 
-Your task is to extract all explicit or implied financial guidance statements from the provided text.
-Guidance refers to any statement describing expected future performance, including (but not limited to):
+        Your task is to extract all explicit or implied financial guidance statements from the provided text.
 
-Revenue, earnings, profit, or margin forecasts
+        For each distinct guidance item, return a JSON object with the following fields (use these exact keys):
 
-EPS, operating income, or growth rate targets
+        company – Company name (string or null)
+        guidance_type – High-level category (e.g., "revenue", "EPS", "margin", "growth")
+        metric – The specific financial metric referred to (e.g., "GAAP EPS", "operating income margin")
+        reporting_period – If applicable, the reporting period the guidance references (e.g., "Q2 2025")
+        guidance_period – The time period the guidance applies to (e.g., "FY2026", "next three years")
+        guidance_period_type – quarter|year|multi-year|ongoing (or null)
+        guidance_timeframe – next_quarter|next_year|long_term (or null)
+        current_value – Current/most-recent numeric value (number or null)
+        current_unit – Unit for current_value (e.g., "USD", "%")
+        guided_value – Guided numeric value (number or null)
+        guided_range_low – If a numeric range is provided, low end (number)
+        guided_range_high – If a numeric range is provided, high end (number)
+        change_pct – Percent change implied (number)
+        is_quantitative – true if guidance contains numeric guidance, false otherwise
+        statement_text – The verbatim or paraphrased statement containing the guidance
+        confidence – Any hedging/confidence language (e.g., "expects", "believes", "confident")
 
-Forward-looking outlooks for specific future periods (quarter, year, multi-year)
-
-For each distinct guidance item, return a structured object with the following fields:
-
-company_name – Company name (string)
-
-ticker – Stock ticker, if available (string or null)
-
-guidance_type – High-level category (e.g., “revenue”, “EPS”, “margin”, “growth”)
-
-metric – The specific financial metric referred to (e.g., “GAAP EPS”, “operating income margin”)
-
-period – Time period the guidance applies to (e.g., “Q2 2025”, “FY2026”, “next three years”)
-
-value – Numerical values or range mentioned (e.g., “$1.20–$1.30”, “+10% YoY”, null if qualitative only)
-
-description – Full qualitative statement containing the guidance (verbatim or paraphrased sentence)
-
-confidence – Any uncertainty or confidence expression (e.g., “expects”, “believes”, “confident”, “approximately”, or null)
-
-If a field is not mentioned or cannot be confidently inferred, leave it null.
-If multiple guidance statements are found, return them all as separate objects in a JSON list.
-If no guidance is present, return an empty list []."""
+        If a field is not mentioned or cannot be confidently inferred, set it to null. Return a JSON list of such objects. If no guidance is present, return an empty list [].
+        """
     
     def _extract_relevant_sections(self, text: str, context_chars: int = 500) -> str:
         """
@@ -115,10 +117,14 @@ If no guidance is present, return an empty list []."""
         seen_ranges = set()
         
         # Find all matches for guidance keywords
+        # Give more preceding context than trailing context to capture the
+        # sentence or clause leading into the guidance language (user request).
+        pre_context = 250
+        post_context = 350
         for pattern in GUIDANCE_KEYWORDS:
             for match in re.finditer(pattern, text, re.IGNORECASE):
-                start = max(0, match.start() - context_chars)
-                end = min(len(text), match.end() + context_chars)
+                start = max(0, match.start() - pre_context)
+                end = min(len(text), match.end() + post_context)
                 
                 # Avoid duplicate overlapping sections
                 range_key = (start // 100, end // 100)  # Bucket by 100-char blocks
@@ -195,6 +201,19 @@ If no guidance is present, return an empty list []."""
                 
             except Exception as e:
                 last_error = e
+                msg = str(e).lower()
+                # If it's a rate/quota-related error, attempt to switch to the
+                # smaller/faster `gpt-4o-mini` model automatically (one-time).
+                if any(tok in msg for tok in ("rate", "quota", "limit", "throttl")) and self.model != "gpt-4o-mini":
+                    print(f"  [FALLBACK] Detected rate/quota error: {e}. Switching model -> gpt-4o-mini and retrying...")
+                    try:
+                        self.model = "gpt-4o-mini"
+                        self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
+                        # continue to next attempt without sleeping so fallback is fast
+                        continue
+                    except Exception as reconfig_err:
+                        print(f"  [ERROR] Failed to reconfigure fallback model: {reconfig_err}")
+
                 if attempt < self.max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
                     print(f"  [RETRY] Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
@@ -208,29 +227,54 @@ If no guidance is present, return an empty list []."""
             return []
         
         try:
-            # Convert Pydantic models to Guidance objects
-            guidance_items = []
+            # The program was configured to output MultiGuidanceExtraction where
+            # each item is (or can be parsed into) the Guidance pydantic model.
+            guidance_items: List[Guidance] = []
             for item in result.guidance_items:
-                guidance = Guidance(
-                    company_name=item.company_name,
-                    ticker_symbol=item.ticker_symbol,
-                    guidance_type=item.guidance_type,
-                    metric_name=item.metric_name,
-                    time_period=item.time_period,
-                    quantitative_value=item.quantitative_value,
-                    qualitative_description=item.qualitative_description,
-                    confidence_level=item.confidence_level,
-                    source_document=metadata.get("source_url") if metadata else None,
-                    extracted_date=metadata.get("published_at") if metadata else None
-                )
-                guidance_items.append(guidance)
-            
+                # item may already be a Guidance instance or a dict-like object
+                if isinstance(item, Guidance):
+                    parsed = item
+                else:
+                    # Parse into Guidance model to ensure types/validation
+                    parsed = Guidance.parse_obj(item)
+
+                # Attach some metadata if provided
+                if metadata:
+                    if metadata.get("source_url"):
+                        parsed.source_url = metadata.get("source_url")
+                    if metadata.get("published_at"):
+                        parsed.extracted_at = metadata.get("published_at")
+                    if metadata.get("source_id"):
+                        parsed.source_type = metadata.get("source_id")
+
+                # Improve statement_text by finding it in the full document and
+                # expanding the snippet so we show more preceding context.
+                st = parsed.statement_text or ""
+                if st:
+                    try:
+                        # Case-insensitive search for the statement snippet in the full text
+                        idx = text.lower().find(st.strip().lower())
+                        if idx != -1:
+                            pre = 300
+                            post = 200
+                            start_snip = max(0, idx - pre)
+                            end_snip = min(len(text), idx + len(st) + post)
+                            parsed.statement_text = text[start_snip:end_snip].strip()
+                    except Exception:
+                        # If anything goes wrong, keep the original statement_text
+                        pass
+
+                # Keep all parsed items (do not apply conservative false-alarm filtering).
+                # Downstream review or heuristic filtering can be applied later if
+                # desired; for now we preserve all LLM outputs for debugging.
+                guidance_items.append(parsed)
+
             if guidance_items:
                 print(f"  [LLM] Extracted {len(guidance_items)} guidance items")
             else:
                 print("  [LLM] No guidance items found")
             return guidance_items
-            
+
         except Exception as e:
             print(f"  [ERROR] Post-processing failed: {e}")
             return []

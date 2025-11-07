@@ -1,15 +1,19 @@
 from __future__ import annotations
-from dataclasses import dataclass, asdict, field
 from typing import Optional
 from uuid import uuid4
 from datetime import datetime
+from pydantic import BaseModel, Field
 
 
-@dataclass
-class Guidance:
-    guid: str = field(default_factory=lambda: uuid4().hex)
+class Guidance(BaseModel):
+    """Pydantic model for a guidance item. Mirrors the previous dataclass fields.
+
+    This model is used as the structured output type for LLM extraction and is
+    intentionally compatible with the old dataclass-based shape.
+    """
+    guid: str = Field(default_factory=lambda: uuid4().hex)
     company: Optional[str] = None
-    ticker: Optional[str] = None
+    # NOTE: ticker removed to reduce complexity; can be added later via mapping
 
     # What guidance is about
     guidance_type: Optional[str] = None  # revenue|earnings|margin|product|strategic
@@ -26,7 +30,6 @@ class Guidance:
     current_value: Optional[float] = None
     current_unit: Optional[str] = None
     guided_value: Optional[float] = None
-    guided_unit: Optional[str] = None
     guided_range_low: Optional[float] = None
     guided_range_high: Optional[float] = None
     change_pct: Optional[float] = None
@@ -40,12 +43,10 @@ class Guidance:
     extracted_at: Optional[str] = None
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        return d
+        return self.dict()
 
     @classmethod
     def from_raw(cls, **kwargs) -> "Guidance":
-        g = cls(**kwargs)
-        if not g.extracted_at:
-            g.extracted_at = datetime.utcnow().isoformat() + "Z"
-        return g
+        if "extracted_at" not in kwargs or not kwargs.get("extracted_at"):
+            kwargs["extracted_at"] = datetime.utcnow().isoformat() + "Z"
+        return cls(**kwargs)
