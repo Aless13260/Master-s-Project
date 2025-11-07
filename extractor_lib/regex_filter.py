@@ -20,8 +20,6 @@ PATTERNS = [
     r"\b(revenue|earnings|eps|margin|growth|sales|income|operating|guidance|outlook)\b",
     # dollar amounts or units (e.g. $45.3B, 3.2 billion)
     r"\b\$\s?\d{1,3}(?:[\,\.]\d{3})*(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s?(?:billion|million|bn|m|B|M)\b",
-    # percent values
-    r"\b\d{1,3}(?:\.\d+)?%\b",
     # range indicators (e.g. "$83-87", "between 10 and 12")
     r"\b(between|to|and|range|\d+\s?-\s?\d+|from\s+\$?\d+\s+to\s+\$?\d+)\b",
     # proximity: expect/forecast within 120 chars of a number or $ amount
@@ -29,7 +27,7 @@ PATTERNS = [
 ]
 
 # Weights to make some patterns more important than others (same order as PATTERNS)
-WEIGHTS = [2.0, 1.0, 0.5, 1.0, 1.0, 1.5, 3.0]
+WEIGHTS = [2.0, 1.0, 0.5, 1.0, 1.5, 4.0]
 
 COMPILED = [re.compile(p, flags=re.IGNORECASE) for p in PATTERNS]
 
