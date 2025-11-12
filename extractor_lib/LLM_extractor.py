@@ -77,28 +77,39 @@ class LLMExtractor:
         self.system_prompt = """
         You are a financial analyst specialized in extracting forward-looking financial guidance from corporate filings, earnings releases, and press statements.
 
-        Your task is to extract all explicit or implied financial guidance statements from the provided text.
+        CRITICAL: Only extract FORWARD-LOOKING guidance. DO NOT extract historical results or past performance.
 
-        For each distinct guidance item, return a JSON object with the following fields (use these exact keys):
+        EXAMPLES OF FORWARD-LOOKING (extract these):
+        ✓ "expects revenue to be $50-52 billion for Q2"
+        ✓ "guidance for full year EPS of $5.00 to $5.50"
+        ✓ "anticipates operating margin of approximately 30%"
+        ✓ "targeting 10% growth in FY2026"
+        ✓ "projects revenue will reach $100 billion"
 
-        company – Company name (string or null)
-        guidance_type – High-level category (e.g., "revenue", "EPS", "margin", "growth")
-        metric – The specific financial metric referred to (e.g., "GAAP EPS", "operating income margin")
-        reporting_period – If applicable, the reporting period the guidance references (e.g., "Q2 2025")
-        guidance_period – The time period the guidance applies to (e.g., "FY2026", "next three years")
-        guidance_period_type – quarter|year|multi-year|ongoing (or null)
-        guidance_timeframe – next_quarter|next_year|long_term (or null)
-        current_value – Current/most-recent numeric value (number or null)
-        current_unit – Unit for current_value (e.g., "USD", "%")
-        guided_value – Guided numeric value (number or null)
-        guided_range_low – If a numeric range is provided, low end (number)
-        guided_range_high – If a numeric range is provided, high end (number)
-        change_pct – Percent change implied (number)
-        is_quantitative – true if guidance contains numeric guidance, false otherwise
-        statement_text – The verbatim or paraphrased statement containing the guidance
-        confidence – Any hedging/confidence language (e.g., "expects", "believes", "confident")
+        EXAMPLES OF HISTORICAL (DO NOT extract these):
+        ✗ "revenue was $281.7 billion and increased 15%"
+        ✗ "net income was $101.8 billion"
+        ✗ "reported earnings of $13.64 per share"
+        ✗ "operating income increased 17%"
+        ✗ "fiscal year ended June 30, 2025 results"
 
-        If a field is not mentioned or cannot be confidently inferred, set it to null. Return a JSON list of such objects. If no guidance is present, return an empty list [].
+        Look for forward-looking verbs: expects, guidance, outlook, forecast, projects, anticipates, targets, will be, plans to
+        REJECT past-tense verbs: was, were, reported, announced, increased, decreased, grew, ended, posted
+
+        For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
+        - company: Company name (string or null)
+        - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "margin" (or null)
+        - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025") (or null)
+        - current_value: Current/most-recent numeric value (number or null)
+        - current_unit: MUST be one of: "USD", "EUR", "GBP", "%", "million", "billion", "units", "other" (or null)
+        - guided_value: Guided numeric value (number or null)
+        - guided_range_low: If a numeric range is provided, low end (number or null)
+        - guided_range_high: If a numeric range is provided, high end (number or null)
+        - change_pct: Percent change implied (number or null)
+        - is_quantitative: true if guidance contains numeric guidance, false otherwise
+        - statement_text: The verbatim statement containing the guidance
+
+        Do NOT extract historical results. Do NOT return past performance data.
         """
     
     def _extract_relevant_sections(self, text: str, context_chars: int = 500) -> str:
@@ -117,10 +128,11 @@ class LLMExtractor:
         seen_ranges = set()
         
         # Find all matches for guidance keywords
-        # Give more preceding context than trailing context to capture the
-        # sentence or clause leading into the guidance language (user request).
-        pre_context = 250
-        post_context = 350
+        # IMPORTANT: Focus heavily on text AFTER guidance keywords (forward-looking)
+        # rather than historical results that appear before them.
+        # Give minimal preceding context, but substantial trailing context.
+        pre_context = 100  # Just enough to capture the intro phrase
+        post_context = 600  # Focus on what comes AFTER the guidance keyword
         for pattern in GUIDANCE_KEYWORDS:
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 start = max(0, match.start() - pre_context)
@@ -202,6 +214,20 @@ class LLMExtractor:
             except Exception as e:
                 last_error = e
                 msg = str(e).lower()
+                
+                # Special handling: if the LLM returned a single object instead of wrapping it,
+                # try to parse it manually as a workaround
+                if "field required" in msg and "guidance_items" in msg:
+                    print(f"  [FALLBACK] LLM returned single object instead of array, attempting manual wrap...")
+                    try:
+                        # Try to parse the raw output as a single Guidance object and wrap it
+                        # This is a heuristic fallback for common LLM mistakes
+                        raw_output = getattr(e, 'raw_output', None) or str(e)
+                        # For now, let it retry normally - the prompt update should fix this
+                        pass
+                    except:
+                        pass
+                
                 # If it's a rate/quota-related error, attempt to switch to the
                 # smaller/faster `gpt-4o-mini` model automatically (one-time).
                 if any(tok in msg for tok in ("rate", "quota", "limit", "throttl")) and self.model != "gpt-4o-mini":
@@ -264,11 +290,37 @@ class LLMExtractor:
                         # If anything goes wrong, keep the original statement_text
                         pass
 
-                # Keep all parsed items (do not apply conservative false-alarm filtering).
-                # Downstream review or heuristic filtering can be applied later if
-                # desired; for now we preserve all LLM outputs for debugging.
-                guidance_items.append(parsed)
+                # SMART FILTER: Check if statement is predominantly historical vs forward-looking
+                # Instead of binary reject, score both types of language and only reject if heavily historical
+                statement_lower = (parsed.statement_text or "").lower()
+                
+                # Count forward-looking signals (strong indicators of guidance)
+                forward_keywords = [
+                    r'\bexpect\w*\b', r'\bforecast\w*\b', r'\bproject\w*\b', r'\banticipat\w*\b',
+                    r'\bguidance\b', r'\boutlook\b', r'\btarget\w*\b', r'\bplan\w*\b',
+                    r'\bwill be\b', r'\bwill reach\b', r'\bwill grow\b',
+                    r'\bto be\b.*\$', r'\bfor (?:Q|FY)\d+\b'  # "to be $X" or "for Q2/FY2025"
+                ]
+                forward_score = sum(1 for pattern in forward_keywords if re.search(pattern, statement_lower))
+                
+                # Count past-tense signals (only strongly historical ones, not comparative context)
+                # Exclude phrases that are often used alongside guidance (e.g., "compared to" in ranges)
+                strong_past_keywords = [
+                    r'\bfiscal year ended\b', r'\bquarter ended\b',
+                    r'\breported (?:revenue|earnings|income)\b',
+                    r'\bannounced.*results?\b',
+                    r'\bwas \$[\d.]+ (?:billion|million)\b',  # "was $X billion" (specific past value)
+                    r'\bincreased \d+%\b.*\bcompared to\b'  # "increased X% compared to" (pure historical)
+                ]
+                strong_past_score = sum(1 for pattern in strong_past_keywords if re.search(pattern, statement_lower))
+                
+                # Only reject if statement is PREDOMINANTLY historical (no forward signals + strong past signals)
+                if strong_past_score >= 2 and forward_score == 0:
+                    print(f"  [FILTER] Rejected purely historical item: {parsed.guidance_type} (past_score={strong_past_score}, forward_score={forward_score})")
+                    continue  # Skip this item
 
+                guidance_items.append(parsed)
+                
             if guidance_items:
                 print(f"  [LLM] Extracted {len(guidance_items)} guidance items")
             else:

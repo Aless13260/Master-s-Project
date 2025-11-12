@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Literal
 from uuid import uuid4
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -15,31 +15,31 @@ class Guidance(BaseModel):
     company: Optional[str] = None
     # NOTE: ticker removed to reduce complexity; can be added later via mapping
 
-    # What guidance is about
-    guidance_type: Optional[str] = None  # revenue|earnings|margin|product|strategic
-    metric: Optional[str] = None
+    # What guidance is about - constrained to valid categories
+    guidance_type: Optional[Literal[
+        "revenue",
+        "earnings",
+        "margin",
+        "opex",
+        "EPS"
+    ]] = None
 
     # Temporal context
     reporting_period: Optional[str] = None
-    reporting_date: Optional[str] = None  # ISO date
-    guidance_period: Optional[str] = None
-    guidance_period_type: Optional[str] = None  # quarter|year|multi-year|ongoing
-    guidance_timeframe: Optional[str] = None  # next_quarter|next_year|long_term
 
     # Quantitative data
     current_value: Optional[float] = None
-    current_unit: Optional[str] = None
+    current_unit: Optional[Literal["USD", "EUR", "GBP", "%", "million", "billion", "units", "other"]] = None
     guided_value: Optional[float] = None
     guided_range_low: Optional[float] = None
     guided_range_high: Optional[float] = None
     change_pct: Optional[float] = None
 
     # Metadata
-    confidence: Optional[str] = None  # high|medium|low
     is_quantitative: Optional[bool] = None
     statement_text: Optional[str] = None
     source_url: Optional[str] = None
-    source_type: Optional[str] = None  # 8-K|press_release|earnings_call
+    source_type: Optional[Literal["8-K", "10-K", "10-Q", "press_release", "earnings_call", "investor_presentation", "other"]] = None
     extracted_at: Optional[str] = None
 
     def to_dict(self) -> dict:
