@@ -73,8 +73,7 @@ class LLMExtractor:
         # System prompt for extraction
         # NOTE: the field names below match the Guidance pydantic model in
         # extractor_lib.guidance_schema so the LLM's structured output can be
-        # parsed directly into that model. We intentionally omit 'ticker' to
-        # keep the model simpler; ticker can be mapped later from other sources.
+        # parsed directly into that model. 
         self.system_prompt = """
         You are a financial analyst specialized in extracting forward-looking financial guidance from corporate filings, earnings releases, and press statements.
 
@@ -99,20 +98,29 @@ class LLMExtractor:
         ✗ "operating income increased 17%"
         ✗ "fiscal year ended June 30, 2025 results"
 
+        EXAMPLES OF OPERATIONAL/NON-FINANCIAL (DO NOT extract these):
+        ✗ "plans to reduce team size by 10,000" (Headcount/HR)
+        ✗ "expects to close 5,000 open roles" (Headcount/HR)
+        ✗ "aims to complete efficiency analysis by summer" (Strategic milestone without financial value)
+        ✗ "targeting developer productivity enhancements" (Operational goal)
+        ✗ "launching new product in Q3" (Product launch without revenue guidance)
+
         Look for forward-looking verbs: expects, guidance, outlook, forecast, projects, anticipates, targets, will be, plans to
         REJECT past-tense verbs: was, were, reported, announced, increased, decreased, grew, ended, posted
+        REJECT operational metrics: headcount, employees, roles, team size, users, subscribers (unless explicitly revenue-related)
 
         For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
         - company: Company name (string or null)
-        - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "margin", "cash_flow", "other" (or null)
-        - metric_name: The specific metric name mentioned in text (e.g. "Net Interest Income", "Cloud Revenue", "Organic Growth") (string or null)
+        - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
+        - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
+        - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
         - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025") (or null)
         - current_value: Current/most-recent numeric value (number or null)
         - current_unit: MUST be one of: "USD", "EUR", "GBP", "%", "million", "billion", "units", "other" (or null)
-        - guided_value: Guided numeric value (number or null)
-        - guided_range_low: If a numeric range is provided, low end (number or null)
-        - guided_range_high: If a numeric range is provided, high end (number or null)
-        - change_pct: Percent change implied (number or null)
+        - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
+        - guided_range_high: The high end of the range (if range). Leave null if single number. (number or null)
+        - change_pct_low: The percent change value (if single number) OR low end of % range. (number or null)
+        - change_pct_high: The high end of % range. Leave null if single number. (number or null)
         - is_quantitative: true if guidance contains numeric guidance, false otherwise
 
         Do NOT extract historical results. Do NOT return past performance data.
@@ -382,10 +390,10 @@ class LLMExtractor:
                         content_identical = (
                             item.guidance_type == existing.guidance_type and
                             item.metric_name == existing.metric_name and
-                            item.guided_value == existing.guided_value and
                             item.guided_range_low == existing.guided_range_low and
                             item.guided_range_high == existing.guided_range_high and
-                            item.change_pct == existing.change_pct
+                            item.change_pct_low == existing.change_pct_low and
+                            item.change_pct_high == existing.change_pct_high
                         )
                         
                         # Only mark as duplicate if BOTH conditions are true

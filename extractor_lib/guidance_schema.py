@@ -21,8 +21,10 @@ class Guidance(BaseModel):
         "earnings",
         "margin",
         "opex",
-        "EPS",
+        "capex",
         "cash_flow",
+        "ebitda",
+        "EPS",
         "other"
     ]] = None
     
@@ -35,10 +37,11 @@ class Guidance(BaseModel):
     # Quantitative data
     current_value: Optional[float] = None
     current_unit: Optional[Literal["USD", "EUR", "GBP", "%", "million", "billion", "units", "other"]] = None
-    guided_value: Optional[float] = None
+    # guided_value removed in favor of using guided_range_low for single values
     guided_range_low: Optional[float] = None
     guided_range_high: Optional[float] = None
-    change_pct: Optional[float] = None
+    change_pct_low: Optional[float] = None
+    change_pct_high: Optional[float] = None
 
     # Metadata
     is_quantitative: Optional[bool] = None
