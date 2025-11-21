@@ -21,8 +21,13 @@ class Guidance(BaseModel):
         "earnings",
         "margin",
         "opex",
-        "EPS"
+        "EPS",
+        "cash_flow",
+        "other"
     ]] = None
+    
+    # The specific metric name mentioned in text (e.g. "Net Interest Income", "Cloud Revenue")
+    metric_name: Optional[str] = None
 
     # Temporal context
     reporting_period: Optional[str] = None

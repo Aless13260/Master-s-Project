@@ -12,6 +12,7 @@ import json
 import sys
 import re
 import time
+import random
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import argparse
@@ -84,7 +85,12 @@ class LLMExtractor:
         ✓ "guidance for full year EPS of $5.00 to $5.50"
         ✓ "anticipates operating margin of approximately 30%"
         ✓ "targeting 10% growth in FY2026"
-        ✓ "projects revenue will reach $100 billion"
+
+        HANDLING MULTIPLE ITEMS (CRITICAL):
+        If a single sentence contains multiple metrics (e.g., "Revenue of $10B and EPS of $2.00"), you MUST create separate JSON objects for each metric.
+        - Object 1: Revenue, $10B
+        - Object 2: EPS, $2.00
+        Do NOT combine them. Do NOT skip items. Extract EVERY distinct forward-looking metric found.
 
         EXAMPLES OF HISTORICAL (DO NOT extract these):
         ✗ "revenue was $281.7 billion and increased 15%"
@@ -98,7 +104,8 @@ class LLMExtractor:
 
         For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
         - company: Company name (string or null)
-        - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "margin" (or null)
+        - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "margin", "cash_flow", "other" (or null)
+        - metric_name: The specific metric name mentioned in text (e.g. "Net Interest Income", "Cloud Revenue", "Organic Growth") (string or null)
         - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025") (or null)
         - current_value: Current/most-recent numeric value (number or null)
         - current_unit: MUST be one of: "USD", "EUR", "GBP", "%", "million", "billion", "units", "other" (or null)
@@ -107,7 +114,6 @@ class LLMExtractor:
         - guided_range_high: If a numeric range is provided, high end (number or null)
         - change_pct: Percent change implied (number or null)
         - is_quantitative: true if guidance contains numeric guidance, false otherwise
-        - statement_text: The verbatim statement containing the guidance
 
         Do NOT extract historical results. Do NOT return past performance data.
         """
@@ -279,13 +285,41 @@ class LLMExtractor:
                 if st:
                     try:
                         # Case-insensitive search for the statement snippet in the full text
-                        idx = text.lower().find(st.strip().lower())
-                        if idx != -1:
-                            pre = 300
-                            post = 200
-                            start_snip = max(0, idx - pre)
-                            end_snip = min(len(text), idx + len(st) + post)
-                            parsed.statement_text = text[start_snip:end_snip].strip()
+                        match_idx = text.lower().find(st.strip().lower())
+                        if match_idx != -1:
+                            # SNAP TO PARAGRAPH BOUNDARIES to avoid "shifted text" duplicates
+                            # 1. Find start of current paragraph (double newline)
+                            para_start = text.rfind('\n\n', 0, match_idx)
+                            para_start = para_start + 2 if para_start != -1 else 0
+                            
+                            # 2. Find end of current paragraph
+                            match_end = match_idx + len(st)
+                            para_end = text.find('\n\n', match_end)
+                            if para_end == -1:
+                                para_end = len(text)
+                                
+                            # 3. Include preceding paragraph if it looks like a header or context
+                            # (often segment names are in the line above)
+                            context_start = para_start
+                            if para_start > 0:
+                                prev_para_start = text.rfind('\n\n', 0, para_start - 2)
+                                prev_para_start = prev_para_start + 2 if prev_para_start != -1 else 0
+                                # If previous paragraph is reasonable length (e.g. header or short intro), include it
+                                if (para_start - prev_para_start) < 300:
+                                    context_start = prev_para_start
+                            
+                            # 4. Extract and validate length
+                            expanded_text = text[context_start:para_end].strip()
+                            
+                            # Fallback: if paragraph structure is missing or huge, use fixed window
+                            if len(expanded_text) > 2000 or len(expanded_text) < len(st) + 50:
+                                pre = 600
+                                post = 400
+                                start_snip = max(0, match_idx - pre)
+                                end_snip = min(len(text), match_end + post)
+                                expanded_text = text[start_snip:end_snip].strip()
+                                
+                            parsed.statement_text = expanded_text
                     except Exception:
                         # If anything goes wrong, keep the original statement_text
                         pass
@@ -320,6 +354,50 @@ class LLMExtractor:
                     continue  # Skip this item
 
                 guidance_items.append(parsed)
+            
+            # Deduplicate: Remove items with highly overlapping statement_text AND similar content
+            # This happens when LLM extracts the same guidance multiple times from one section
+            # CRITICAL: Only deduplicate if BOTH text overlaps AND guidance content is identical
+            if len(guidance_items) > 1:
+                deduplicated = []
+                
+                for item in guidance_items:
+                    statement = (item.statement_text or "").strip()
+                    
+                    # Check if this is a true duplicate (same content, not just same source text)
+                    is_duplicate = False
+                    for existing in deduplicated:
+                        existing_statement = (existing.statement_text or "").strip()
+                        
+                        # First check: do the statements significantly overlap?
+                        text_overlap = False
+                        if len(statement) > 50 and len(existing_statement) > 50:
+                            shorter = min(statement, existing_statement, key=len)
+                            longer = max(statement, existing_statement, key=len)
+                            overlap_ratio = len(shorter) / len(longer) if len(longer) > 0 else 0
+                            text_overlap = (overlap_ratio > 0.7 or shorter in longer)
+                        
+                        # Second check: is the guidance content identical?
+                        # Compare guidance_type, metric_name, and numeric values
+                        content_identical = (
+                            item.guidance_type == existing.guidance_type and
+                            item.metric_name == existing.metric_name and
+                            item.guided_value == existing.guided_value and
+                            item.guided_range_low == existing.guided_range_low and
+                            item.guided_range_high == existing.guided_range_high and
+                            item.change_pct == existing.change_pct
+                        )
+                        
+                        # Only mark as duplicate if BOTH conditions are true
+                        if text_overlap and content_identical:
+                            is_duplicate = True
+                            print(f"  [DEDUP] Skipped duplicate: {item.guidance_type} with same values")
+                            break
+                    
+                    if not is_duplicate:
+                        deduplicated.append(item)
+                
+                guidance_items = deduplicated
                 
             if guidance_items:
                 print(f"  [LLM] Extracted {len(guidance_items)} guidance items")
@@ -332,14 +410,19 @@ class LLMExtractor:
             return []
 
 
-def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None) -> List[Dict[str, Any]]:
+def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None, randomize: bool = False) -> List[Dict[str, Any]]:
     """Load filtered candidate documents."""
     candidates = []
     with open(candidates_path, 'r', encoding='utf-8') as f:
         for i, line in enumerate(f):
-            if max_items and i >= max_items:
+            # Only stop early if NOT randomizing
+            if not randomize and max_items and i >= max_items:
                 break
             candidates.append(json.loads(line))
+            
+    if randomize and max_items and len(candidates) > max_items:
+        print(f"Randomly sampling {max_items} from {len(candidates)} candidates...")
+        candidates = random.sample(candidates, max_items)
     
     print(f"Loaded {len(candidates)} candidate documents")
     return candidates
@@ -375,6 +458,7 @@ def main():
     parser.add_argument("--provider", default="github", help="LLM provider (github, openai)")
     parser.add_argument("--model", default="gpt-4o-mini", help="Model name")
     parser.add_argument("--max-items", type=int, help="Limit number of candidates to process (for testing)")
+    parser.add_argument("--random", action="store_true", help="Randomly sample max-items instead of taking the first N")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
     
@@ -401,7 +485,7 @@ def main():
     
     # Load data
     print("Loading candidate documents...")
-    candidates = load_candidates(max_items=args.max_items)
+    candidates = load_candidates(max_items=args.max_items, randomize=args.random)
     
     print("Loading full text content...")
     contents = load_contents_for_candidates(candidates)
