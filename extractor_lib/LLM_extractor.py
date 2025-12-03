@@ -48,6 +48,12 @@ class MultiGuidanceExtraction(BaseModel):
     guidance_items: List[GuidanceExtraction] = Field(
         description="List of all financial guidance items found in the document"
     )
+    review_summary: Optional[str] = Field(
+        description="Short explanation of what was fixed or added during review. If no changes, state 'No changes'."
+    )
+    changes_made: bool = Field(
+        description="True if any items were added, removed, or modified. False otherwise."
+    )
 
 
 class LLMExtractor:
@@ -124,6 +130,22 @@ class LLMExtractor:
         - is_quantitative: true if guidance contains numeric guidance, false otherwise
 
         Do NOT extract historical results. Do NOT return past performance data.
+        """
+
+        self.refinement_prompt = """
+        You are a Senior Auditor reviewing the work of a junior analyst.
+        
+        Your task is to review the extracted guidance items against the source text and CORRECT any mistakes.
+        
+        CHECKLIST:
+        1. MISSED ITEMS: Did the analyst miss any forward-looking guidance (Revenue, EPS, Margins, Capex)?
+        2. FALSE POSITIVES: Did the analyst extract HISTORICAL data (past tense) as guidance? Remove it.
+        3. OPERATIONAL METRICS: Did the analyst extract non-financial metrics (headcount, roles)? Remove them.
+        4. ACCURACY: Are the numbers and units correct?
+        
+        Return the FINAL, CORRECTED list of guidance items.
+        Also provide a 'review_summary' explaining what you changed (e.g. "Added missing Capex guidance", "Removed historical revenue"), and set 'changes_made' to true if you modified anything.
+        If the original list was perfect, return it exactly as is, set 'changes_made' to false, and 'review_summary' to "No changes needed".
         """
     
     def _extract_relevant_sections(self, text: str, context_chars: int = 500) -> str:
@@ -285,7 +307,23 @@ class LLMExtractor:
                     if metadata.get("published_at"):
                         parsed.extracted_at = metadata.get("published_at")
                     if metadata.get("source_id"):
-                        parsed.source_type = metadata.get("source_id")
+                        # Map source_id to valid source_type schema to avoid validation errors
+                        # The schema restricts source_type to specific Literals
+                        sid = str(metadata.get("source_id")).lower()
+                        if "8-k" in sid or "8k" in sid:
+                            parsed.source_type = "8-K"
+                        elif "10-k" in sid or "10k" in sid:
+                            parsed.source_type = "10-K"
+                        elif "10-q" in sid or "10q" in sid:
+                            parsed.source_type = "10-Q"
+                        elif "press" in sid or "release" in sid:
+                            parsed.source_type = "press_release"
+                        elif "call" in sid or "transcript" in sid:
+                            parsed.source_type = "earnings_call"
+                        elif "presentation" in sid:
+                            parsed.source_type = "investor_presentation"
+                        else:
+                            parsed.source_type = "other"
 
                 # Improve statement_text by finding it in the full document and
                 # expanding the snippet so we show more preceding context.
@@ -417,6 +455,87 @@ class LLMExtractor:
             print(f"  [ERROR] Post-processing failed: {e}")
             return []
 
+    def extract_with_agentic_review(
+        self, 
+        text: str, 
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> List[Guidance]:
+        """
+        Two-stage extraction:
+        1. Initial extraction (same as extract_from_text)
+        2. Self-reflection/Review (Agentic step)
+        
+        This satisfies the "Agentic" requirement for research by implementing
+        a feedback loop where the model critiques and corrects its own output.
+        """
+        # Stage 1: Initial Extraction
+        print("  [AGENT] Stage 1: Initial Extraction...")
+        initial_items = self.extract_from_text(text, metadata)
+        
+        if not initial_items:
+            print("  [AGENT] No items to review. Skipping Stage 2.")
+            return []
+            
+        # Stage 2: Review and Refine
+        print(f"  [AGENT] Stage 2: Reviewing {len(initial_items)} items...")
+        
+        # Prepare the context for the review
+        # We need to feed back the extracted items to the LLM
+        current_extraction_json = json.dumps([item.dict() for item in initial_items], indent=2)
+        
+        # Smart extraction again to get the text context (reuse the logic)
+        focused_text = self._extract_relevant_sections(text)
+        if len(focused_text) > 16000:
+            focused_text = focused_text[:16000] + "\n... [truncated]"
+
+        try:
+            # Create the review program
+            # We reuse MultiGuidanceExtraction as the output format
+            program = LLMTextCompletionProgram.from_defaults(
+                output_cls=MultiGuidanceExtraction,
+                prompt_template_str=self.refinement_prompt + "\n\nSOURCE TEXT:\n{text}\n\nPREVIOUSLY EXTRACTED ITEMS:\n{current_extraction}\n\nCORRECTED ITEMS:",
+                llm=self.llm,
+                verbose=False
+            )
+            
+            # Run the review
+            result = program(text=focused_text, current_extraction=current_extraction_json)
+            
+            # Parse results
+            refined_items: List[Guidance] = []
+            
+            # Get review metadata
+            summary = getattr(result, 'review_summary', "No summary provided")
+            changed = getattr(result, 'changes_made', False)
+            
+            if changed:
+                print(f"  [AGENT] Reviewer Summary: {summary}")
+            
+            for item in result.guidance_items:
+                if isinstance(item, Guidance):
+                    parsed = item
+                else:
+                    parsed = Guidance.parse_obj(item)
+                
+                # Tag this item as coming from the agentic review process
+                parsed.extraction_method = "agentic_review"
+                parsed.agentic_review_comment = summary
+                parsed.was_updated_by_agent = changed
+                
+                refined_items.append(parsed)
+            
+            # Compare counts to see if the agent made changes
+            if len(refined_items) != len(initial_items):
+                print(f"  [AGENT] Refinement changed item count: {len(initial_items)} -> {len(refined_items)}")
+            else:
+                print("  [AGENT] Refinement kept item count same (content may have changed).")
+                
+            return refined_items
+            
+        except Exception as e:
+            print(f"  [AGENT] Refinement failed: {e}. Returning initial extraction.")
+            return initial_items
+
 
 def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None, randomize: bool = False) -> List[Dict[str, Any]]:
     """Load filtered candidate documents."""
@@ -469,15 +588,22 @@ def main():
     parser.add_argument("--random", action="store_true", help="Randomly sample max-items instead of taking the first N")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
+    parser.add_argument("--agentic", action="store_true", help="Enable agentic self-correction loop (slower but more accurate)")
     
     args = parser.parse_args()
+
+    # If using default output path and agentic mode is on, switch to agentic filename
+    if args.agentic and args.output == OUTPUT_PATH:
+        args.output = OUTPUT_PATH.with_name("extracted_guidance_agentic.jsonl")
     
     print("=" * 60)
     print("LLM GUIDANCE EXTRACTION")
     print("=" * 60)
     print(f"Provider: {args.provider}")
     print(f"Model: {args.model}")
+    print(f"Mode: {'Agentic (Review Loop)' if args.agentic else 'Standard (Single Pass)'}")
     print(f"Max retries: {args.max_retries}")
+    print(f"Output: {args.output}")
     if args.max_items:
         print(f"Max items: {args.max_items} (TEST MODE)")
     print()
@@ -539,7 +665,10 @@ def main():
         
         # Run extraction
         try:
-            guidance_items = extractor.extract_from_text(full_text, metadata)
+            if args.agentic:
+                guidance_items = extractor.extract_with_agentic_review(full_text, metadata)
+            else:
+                guidance_items = extractor.extract_from_text(full_text, metadata)
             
             if guidance_items:
                 success_count += 1

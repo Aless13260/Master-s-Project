@@ -49,6 +49,13 @@ class Guidance(BaseModel):
     source_url: Optional[str] = None
     source_type: Optional[Literal["8-K", "10-K", "10-Q", "press_release", "earnings_call", "investor_presentation", "other"]] = None
     extracted_at: Optional[str] = None
+    
+    # Track which pipeline stage produced this item (for research comparison)
+    extraction_method: Optional[Literal["standard", "agentic_review"]] = "standard"
+    
+    # Agentic review details (for debugging/analysis)
+    agentic_review_comment: Optional[str] = None
+    was_updated_by_agent: Optional[bool] = False
 
     def to_dict(self) -> dict:
         return self.dict()
