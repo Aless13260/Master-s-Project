@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Literal
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 
@@ -48,8 +48,12 @@ class Guidance(BaseModel):
     statement_text: Optional[str] = None
     source_url: Optional[str] = None
     source_type: Optional[Literal["8-K", "10-K", "10-Q", "press_release", "earnings_call", "investor_presentation", "other"]] = None
-    extracted_at: Optional[str] = None
     
+    # Dates
+    published_at: Optional[str] = None  # When the document was published by the source
+    ingested_at: Optional[str] = None   # When the document was fetched/ingested by our system
+    extracted_at: Optional[str] = None  # When this guidance item was extracted (output created)
+
     # Track which pipeline stage produced this item (for research comparison)
     extraction_method: Optional[Literal["standard", "agentic_review"]] = "standard"
     
@@ -58,10 +62,10 @@ class Guidance(BaseModel):
     was_updated_by_agent: Optional[bool] = False
 
     def to_dict(self) -> dict:
-        return self.dict()
+        return self.model_dump()
 
     @classmethod
     def from_raw(cls, **kwargs) -> "Guidance":
         if "extracted_at" not in kwargs or not kwargs.get("extracted_at"):
-            kwargs["extracted_at"] = datetime.utcnow().isoformat() + "Z"
+            kwargs["extracted_at"] = datetime.now(timezone.utc).isoformat()
         return cls(**kwargs)

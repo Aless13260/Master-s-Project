@@ -10,3 +10,4 @@ beautifulsoup4
 scikit-learn
 numpy
 bs4
+llama-index-llms-deepseek

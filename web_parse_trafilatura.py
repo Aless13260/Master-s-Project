@@ -31,6 +31,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 TZ = zoneinfo.ZoneInfo("Asia/Kuala_Lumpur")
 UA = "AgenticFinanceResearchBot/0.1 (contact: aless13260@gmail.com)"
+MIN_CONTENT_LENGTH = 300  # Skip content shorter than this (likely image-only or empty)
 
 POINTERS_PATH = Path("pointerEvents") / "pointers.json"
 OUT_PATH = Path("pointerEvents") / "contents.jsonl"
@@ -333,6 +334,16 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
 
             # Text extraction main body
             text = extract_with_trafilatura(html, link)
+            
+            # Check for minimum content length to skip image-only or empty pages
+            if text and len(text) < MIN_CONTENT_LENGTH:
+                print(f"[SKIP] Content too short ({len(text)} chars): {uid}")
+                item["fetch_status"] = "skipped_too_short"
+                out.write(json.dumps(item, ensure_ascii=False) + "\n")
+                added += 1
+                seen.add(uid)
+                continue
+
             if text:
                 item["fetch_status"] = "ok"
                 item["extracted_text"] = text

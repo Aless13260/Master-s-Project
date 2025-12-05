@@ -1,57 +1,1180 @@
 feeds:
-# SEC 8-K Filings (Current Reports - includes earnings, material events, guidance)
 - id: msft_8k
-  label: "Microsoft SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000789019&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000789019&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: aapl_8k
-  label: "Apple SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320193&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320193&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: tsla_8k
-  label: "Tesla SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001318605&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001318605&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: nvda_8k
-  label: "NVIDIA SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001045810&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001045810&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: amzn_8k
-  label: "Amazon SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001018724&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001018724&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: meta_8k
-  label: "Meta SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001326801&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001326801&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: googl_8k
-  label: "Alphabet SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001652044&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001652044&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: jpm_8k
-  label: "JPMorgan Chase SEC 8-K Filings"
-  url: "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000019617&type=8-K&dateb=&owner=exclude&count=40&search_text=&output=atom"
-  tags: [sec, 8-k, filing]
-
-# Press release feeds (keeping for comparison)
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000019617&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
 - id: microsoft_news
-  label: "Microsoft newsroom (press releases)"
-  url: "https://news.microsoft.com/feed/"
-  tags: [press, investor-relations]
-
+  label: Microsoft newsroom (press releases)
+  url: https://news.microsoft.com/feed/
+  tags:
+  - press
+  - investor-relations
 - id: apple_newsroom
-  label: "Apple Newsroom (press releases)"
-  url: "https://www.apple.com/newsroom/rss-feed.rss"
-  tags: [press, newsroom]
-
+  label: Apple Newsroom (press releases)
+  url: https://www.apple.com/newsroom/rss-feed.rss
+  tags:
+  - press
+  - newsroom
 - id: nvidia_investor_resources
-  label: "NVIDIA Investor Resources"
-  url: "https://nvidianews.nvidia.com/cats/press_release.xml"
-  tags: [press]
+  label: NVIDIA Investor Resources
+  url: https://nvidianews.nvidia.com/cats/press_release.xml
+  tags:
+  - press
+- id: avgo_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001730168&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: orcl_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001341439&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: csco_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000858877&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: crm_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001108524&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: amd_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000002488&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: nflx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001065280&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: adbe_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000796343&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: intc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000050863&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: qcom_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000804328&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: txn_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000097476&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ibm_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000051143&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: acn_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001467373&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: now_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001373715&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: uber_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001543151&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: abnb_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001559720&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: fis_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001136893&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: it_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000749251&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mu_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000723125&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: lrcx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000707549&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: adi_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000006281&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: klac_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000319201&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: v_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001403161&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ma_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001141391&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: bac_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000070858&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: wfc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000072971&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ms_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000895421&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: gs_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000886982&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: c_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000831001&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: blk_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0002012383&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: axp_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000004962&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: spgi_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000064040&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mco_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001059556&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: schw_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000316709&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: pnc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000713676&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: usb_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000036104&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: tfc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000092230&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cof_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000927628&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: bk_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001390777&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ice_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001571949&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cme_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001156375&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: aig_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000005272&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: met_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001099219&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: pru_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001137774&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: trv_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000086312&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: all_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000899051&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hig_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000874766&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cb_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000896159&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mmc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000062709&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: aon_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000315293&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ajg_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000354190&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: lly_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000059478&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: unh_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000731766&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: jnj_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000200406&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mrk_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000310158&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: abbv_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001551152&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: tmo_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000097745&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: abt_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000001800&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: pfe_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000078003&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: dhr_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000313616&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: bmy_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000014272&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: amgn_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000318154&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: isrg_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001035267&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: gild_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000882095&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: syk_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000310764&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: elv_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001156039&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cvs_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000064803&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ci_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001739940&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hca_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000860730&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mck_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000927653&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: bdx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000010795&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: regn_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000872589&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: vrtx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000875320&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: zts_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001555280&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: bsx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000885725&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ew_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001099800&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hum_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000049071&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cnc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001071739&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: iqv_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001478242&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: a_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001090872&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mtd_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001037646&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: wmt_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000104169&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: pg_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000080424&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hd_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000354950&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cost_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000909832&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ko_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000021344&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: pep_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000077476&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mcd_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000063908&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: dis_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001744489&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: nke_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000320187&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: sbux_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000829224&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: low_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000060667&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: tgt_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000027419&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: tjx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000109198&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: bkng_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001075531&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mar_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001048286&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hlt_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001585689&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: yum_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001041061&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cmg_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001058090&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: lulu_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001397187&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: f_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000037996&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: gm_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001467858&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: tsco_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000916365&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: rost_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000745732&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: orly_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000898173&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: azo_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000866787&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ulta_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001403568&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: dhi_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000882184&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: len_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000920760&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: phm_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000822416&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: nvr_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000906163&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: pm_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001413329&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mo_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000764180&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cl_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000021665&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: el_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001001250&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: kmb_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000055785&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: gis_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000040704&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: k_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000055067&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hsy_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000047111&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mkc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000063754&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: stz_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000016918&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cat_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000018230&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ge_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000040545&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hon_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000773840&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: unp_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000100885&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ups_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001090727&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: rtx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000101829&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: lmt_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000936468&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ba_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000012927&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: de_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000315189&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: adp_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000008670&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: etn_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001551182&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: itw_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000049826&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: wm_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000823768&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: rsg_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001060391&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mmm_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000066740&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: emr_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000032604&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ph_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000076334&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cmi_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000026172&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: pcar_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000075362&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: gww_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000277135&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: xom_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000034088&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cvx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000093410&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: cop_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001163165&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: slb_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000087347&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: eog_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000821189&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: mpc_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001510295&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: psx_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001534701&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: vlo_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001035002&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: oxy_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000797468&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: kmi_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001506307&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: wmb_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000107263&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: hal_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000045012&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: bkr_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001701605&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: dvn_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001090012&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: fang_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001539838&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: trgp_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001389170&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: oke_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001039684&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate
+- id: ctra_8k
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000858470&type=8-K&dateb=&owner=exclude&count=100&search_text=&output=atom
+  format: atom
+  tags:
+  - sec
+  - 8-k
+  - guidance_candidate

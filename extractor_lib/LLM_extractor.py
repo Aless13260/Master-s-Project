@@ -13,10 +13,10 @@ import sys
 import re
 import time
 import random
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import argparse
-from llama_index.core.llms import ChatMessage
 from llama_index.core.program import LLMTextCompletionProgram
 from pydantic import BaseModel, Field
 
@@ -59,19 +59,19 @@ class MultiGuidanceExtraction(BaseModel):
 class LLMExtractor:
     """Extract financial guidance using an LLM with structured output."""
     
-    def __init__(self, provider: str = "github", model: str = None, temperature: float = 0.0, max_retries: int = 3):
+    def __init__(self, provider: str = "deepseek", model: str = None, temperature: float = 0.0, max_retries: int = 3):
         """
         Initialize the extractor.
         
         Args:
-            provider: LLM provider ("github", "openai", etc.)
+            provider: LLM provider ("deepseek", "github", "openai", etc.)
             model: Specific model to use (or None for defaults, uses gpt-4o-mini)
             temperature: 0.0 for deterministic extraction
             max_retries: Number of retry attempts for failed LLM calls
         """
         # store config so we can reconfigure on errors (e.g., rate limits)
         self.provider = provider
-        self.model = model or "gpt-4o-mini"
+        self.model = model or "deepseek-chat"
         self.temperature = temperature
         self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
         self.max_retries = max_retries
@@ -144,8 +144,16 @@ class LLMExtractor:
         4. ACCURACY: Are the numbers and units correct?
         
         Return the FINAL, CORRECTED list of guidance items.
-        Also provide a 'review_summary' explaining what you changed (e.g. "Added missing Capex guidance", "Removed historical revenue"), and set 'changes_made' to true if you modified anything.
-        If the original list was perfect, return it exactly as is, set 'changes_made' to false, and 'review_summary' to "No changes needed".
+        
+        CRITICAL - PER ITEM REVIEW:
+        For EACH item in the list, you MUST populate these fields:
+        - 'agentic_review_comment': Specific note for this item. 
+          * If unchanged: "Verified: Matches source text."
+          * If corrected: "Correction: Changed [field] from X to Y."
+          * If added: "Added: Missed in initial pass."
+        - 'was_updated_by_agent': true if you modified or added this item, false if it is unchanged.
+
+        Also provide a global 'review_summary' for the whole document.
         """
     
     def _extract_relevant_sections(self, text: str, context_chars: int = 500) -> str:
@@ -251,31 +259,6 @@ class LLMExtractor:
                 last_error = e
                 msg = str(e).lower()
                 
-                # Special handling: if the LLM returned a single object instead of wrapping it,
-                # try to parse it manually as a workaround
-                if "field required" in msg and "guidance_items" in msg:
-                    print(f"  [FALLBACK] LLM returned single object instead of array, attempting manual wrap...")
-                    try:
-                        # Try to parse the raw output as a single Guidance object and wrap it
-                        # This is a heuristic fallback for common LLM mistakes
-                        raw_output = getattr(e, 'raw_output', None) or str(e)
-                        # For now, let it retry normally - the prompt update should fix this
-                        pass
-                    except:
-                        pass
-                
-                # If it's a rate/quota-related error, attempt to switch to the
-                # smaller/faster `gpt-4o-mini` model automatically (one-time).
-                if any(tok in msg for tok in ("rate", "quota", "limit", "throttl")) and self.model != "gpt-4o-mini":
-                    print(f"  [FALLBACK] Detected rate/quota error: {e}. Switching model -> gpt-4o-mini and retrying...")
-                    try:
-                        self.model = "gpt-4o-mini"
-                        self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
-                        # continue to next attempt without sleeping so fallback is fast
-                        continue
-                    except Exception as reconfig_err:
-                        print(f"  [ERROR] Failed to reconfigure fallback model: {reconfig_err}")
-
                 if attempt < self.max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
                     print(f"  [RETRY] Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
@@ -304,8 +287,16 @@ class LLMExtractor:
                 if metadata:
                     if metadata.get("source_url"):
                         parsed.source_url = metadata.get("source_url")
+                    
+                    # Set dates
                     if metadata.get("published_at"):
-                        parsed.extracted_at = metadata.get("published_at")
+                        parsed.published_at = metadata.get("published_at")
+                    if metadata.get("fetched_at"):
+                        parsed.ingested_at = metadata.get("fetched_at")
+                    
+                    # Set extraction time (now)
+                    parsed.extracted_at = datetime.now(timezone.utc).isoformat()
+
                     if metadata.get("source_id"):
                         # Map source_id to valid source_type schema to avoid validation errors
                         # The schema restricts source_type to specific Literals
@@ -481,7 +472,7 @@ class LLMExtractor:
         
         # Prepare the context for the review
         # We need to feed back the extracted items to the LLM
-        current_extraction_json = json.dumps([item.dict() for item in initial_items], indent=2)
+        current_extraction_json = json.dumps([item.model_dump() for item in initial_items], indent=2)
         
         # Smart extraction again to get the text context (reuse the logic)
         focused_text = self._extract_relevant_sections(text)
@@ -519,8 +510,15 @@ class LLMExtractor:
                 
                 # Tag this item as coming from the agentic review process
                 parsed.extraction_method = "agentic_review"
-                parsed.agentic_review_comment = summary
-                parsed.was_updated_by_agent = changed
+                
+                # Use the item-specific comment if the LLM provided it (as requested in prompt)
+                # Fallback to global summary only if missing
+                if not parsed.agentic_review_comment:
+                    parsed.agentic_review_comment = summary
+                
+                # Use item-specific flag if provided, otherwise fallback to global change flag
+                if parsed.was_updated_by_agent is None:
+                    parsed.was_updated_by_agent = changed
                 
                 refined_items.append(parsed)
             
@@ -582,8 +580,8 @@ def load_contents_for_candidates(
 def main():
     """Main extraction pipeline."""
     parser = argparse.ArgumentParser(description="Extract financial guidance using LLM")
-    parser.add_argument("--provider", default="github", help="LLM provider (github, openai)")
-    parser.add_argument("--model", default="gpt-4o-mini", help="Model name")
+    parser.add_argument("--provider", default="deepseek", help="LLM provider (deepseek, github, openai)")
+    parser.add_argument("--model", default="deepseek-chat", help="Model name")
     parser.add_argument("--max-items", type=int, help="Limit number of candidates to process (for testing)")
     parser.add_argument("--random", action="store_true", help="Randomly sample max-items instead of taking the first N")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
@@ -659,6 +657,7 @@ def main():
         metadata = {
             'source_url': candidate.get('source_url'),
             'published_at': content_record.get('published_at'),
+            'fetched_at': content_record.get('fetched_at'),
             'source_id': candidate.get('source_id'),
             'match_patterns': candidate.get('matched_patterns', [])
         }
@@ -681,6 +680,10 @@ def main():
                         'title': title,
                         'guidance': guidance.to_dict()
                     }
+                    if guidance.current_value and guidance.guided_range_low:
+                        guidance.change_pct_low = guidance.guided_range_low / guidance.current_value * 100 - 100
+                        if guidance.guided_range_high:
+                            guidance.change_pct_high = guidance.guided_range_high / guidance.current_value * 100 - 100
                     all_extractions.append(extraction_record)
             else:
                 print(f"  [WARN] No guidance extracted")

@@ -6,18 +6,19 @@ Supports GitHub Models, OpenAI, Anthropic, and Ollama (local).
 import os
 from dotenv import load_dotenv
 from llama_index.core import Settings
+from llama_index.llms.deepseek import DeepSeek
 from llama_index.llms.openai import OpenAI
 
 
 load_dotenv()
 
 
-def setup_llm(provider="github", model=None, temperature=0.0):
+def setup_llm(provider="deepseek", model=None, temperature=0.0):
     """
     Configure LlamaIndex with the specified LLM provider.
     
     Args:
-        provider: "github", "openai", "anthropic", or "ollama"
+        provider: "deepseek", "github", "openai", "anthropic", or "ollama"
         model: Specific model name (or None for defaults)
         temperature: 0.0 for deterministic, higher for creative
     
@@ -25,34 +26,30 @@ def setup_llm(provider="github", model=None, temperature=0.0):
         Configured LLM instance
     """
     
-    if provider == "github":
-        # GitHub Models uses OpenAI-compatible API
-        api_key = os.getenv("GITHUB_TOKEN")
-        if not api_key:
-            raise ValueError("GITHUB_TOKEN not found in .env file")
+    if provider == "deepseek":
+        api_key_deepseek = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key_deepseek:
+            raise ValueError("DEEPSEEK_API_KEY not found in .env file")
         
-        # Available models: gpt-4o, gpt-4o-mini, meta-llama-3.1-405b-instruct, etc.
-        model = model or "gpt-4o-mini"  # Fast and free
+        model = model or "deepseek-chat"  # Fast and free
         
-        llm = OpenAI(
-            api_key=api_key,
+        llm = DeepSeek(
+            api_key=api_key_deepseek,
             model=model,
             temperature=temperature,
-            api_base="https://models.inference.ai.azure.com",
-            api_version=None,  # GitHub Models doesn't use versioning
         )
-        print(f"[LLM] Using GitHub Models: {model}")
+        print(f"[LLM] Using DeepSeek: {model}")
     
-    elif provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
+    elif provider == "github":
+        api_key_chatGPT = os.getenv("OPENAI_API_KEY")
+        if not api_key_chatGPT:
             raise ValueError("OPENAI_API_KEY not found in .env file")
         
         model = model or "gpt-4o-mini"  # Cheaper, faster for extraction
         # model = model or "gpt-4o"  # Use this for higher quality
         
         llm = OpenAI(
-            api_key=api_key,
+            api_key=api_key_chatGPT,
             model=model,
             temperature=temperature,
         )
@@ -82,11 +79,11 @@ if __name__ == "__main__":
     # Test different providers
     print("=== LLM Setup Test ===\n")
     
-    # Try GitHub Models first (recommended, free)
+    # Try DeepSeek first (recommended, free)
     try:
-        llm = setup_llm(provider="github", model="gpt-5-mini")
+        llm = setup_llm(provider="deepseek")
         test_llm(llm)
     except Exception as e:
-        print(f"[WARN] GitHub Models setup failed: {e}")
+        print(f"[WARN] DeepSeek setup failed: {e}")
     
   
