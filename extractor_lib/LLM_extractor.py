@@ -16,6 +16,7 @@ import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from uuid import uuid4
 import argparse
 from llama_index.core.program import LLMTextCompletionProgram
 from pydantic import BaseModel, Field
@@ -145,6 +146,8 @@ class LLMExtractor:
         
         Return the FINAL, CORRECTED list of guidance items.
         
+        No need to change the statement_text as long as you can make sure the extracted fields match with the source text which is the most important!
+
         CRITICAL - PER ITEM REVIEW:
         For EACH item in the list, you MUST populate these fields:
         - 'agentic_review_comment': Specific note for this item. 
@@ -282,6 +285,9 @@ class LLMExtractor:
                 else:
                     # Parse into Guidance model to ensure types/validation
                     parsed = Guidance.parse_obj(item)
+
+                # Force a fresh unique ID because LLM often hallucinates generic IDs like "guid_1"
+                parsed.guid = uuid4().hex
 
                 # Attach some metadata if provided
                 if metadata:
@@ -503,10 +509,17 @@ class LLMExtractor:
                 print(f"  [AGENT] Reviewer Summary: {summary}")
             
             for item in result.guidance_items:
+                # item may already be a Guidance instance or a dict-like object
                 if isinstance(item, Guidance):
                     parsed = item
                 else:
                     parsed = Guidance.parse_obj(item)
+                
+                # Force a fresh unique ID for the refined item
+                parsed.guid = uuid4().hex
+
+                # Tag this item as coming from the agentic review process
+                parsed.extraction_method = "agentic_review"
                 
                 # Tag this item as coming from the agentic review process
                 parsed.extraction_method = "agentic_review"
@@ -680,10 +693,15 @@ def main():
                         'title': title,
                         'guidance': guidance.to_dict()
                     }
-                    if guidance.current_value and guidance.guided_range_low:
-                        guidance.change_pct_low = guidance.guided_range_low / guidance.current_value * 100 - 100
-                        if guidance.guided_range_high:
-                            guidance.change_pct_high = guidance.guided_range_high / guidance.current_value * 100 - 100
+                    # Calculate change_pct_low/high if not provided but can be derived
+                    if (guidance.current_value and guidance.current_value != 0 and 
+                        guidance.guided_range_low and not guidance.change_pct_low):
+                        try:
+                            guidance.change_pct_low = (guidance.guided_range_low / guidance.current_value - 1) * 100
+                            if guidance.guided_range_high and not guidance.change_pct_high:
+                                guidance.change_pct_high = (guidance.guided_range_high / guidance.current_value - 1) * 100
+                        except (ZeroDivisionError, TypeError):
+                            pass  # Keep original values if calculation fails
                     all_extractions.append(extraction_record)
             else:
                 print(f"  [WARN] No guidance extracted")
