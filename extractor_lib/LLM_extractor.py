@@ -60,13 +60,14 @@ class MultiGuidanceExtraction(BaseModel):
 class LLMExtractor:
     """Extract financial guidance using an LLM with structured output."""
     
-    def __init__(self, provider: str = "deepseek", model: str = None, temperature: float = 0.0, max_retries: int = 3):
+    def __init__(self, provider: str = "deepseek", model: str = None, agentic_model: str = None, temperature: float = 0.0, max_retries: int = 3):
         """
         Initialize the extractor.
         
         Args:
             provider: LLM provider ("deepseek", "github", "openai", etc.)
-            model: Specific model to use (or None for defaults, uses gpt-4o-mini)
+            model: Model for initial extraction (default: deepseek-chat)
+            agentic_model: Model for agentic review (default: deepseek-reasoner if provider is deepseek)
             temperature: 0.0 for deterministic extraction
             max_retries: Number of retry attempts for failed LLM calls
         """
@@ -75,6 +76,18 @@ class LLMExtractor:
         self.model = model or "deepseek-chat"
         self.temperature = temperature
         self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
+        
+        # Setup separate LLM for agentic review (Reasoning model)
+        if agentic_model:
+            self.agentic_model_name = agentic_model
+        elif provider == "deepseek":
+            self.agentic_model_name = "deepseek-reasoner" # Default to reasoning model for DeepSeek
+        else:
+            self.agentic_model_name = self.model # Fallback to same model
+            
+        print(f"[LLM] Agentic Reviewer: {self.agentic_model_name}")
+        self.agentic_llm = setup_llm(provider=self.provider, model=self.agentic_model_name, temperature=self.temperature)
+        
         self.max_retries = max_retries
 
         # System prompt for extraction
@@ -134,29 +147,36 @@ class LLMExtractor:
         """
 
         self.refinement_prompt = """
-        You are a Senior Auditor reviewing the work of a junior analyst.
+        You are a Senior Financial Analyst & Risk Manager.
         
-        Your task is to review the extracted guidance items against the source text and CORRECT any mistakes.
+        Your task is NOT just to verify the numbers, but to ENRICH the extracted guidance with qualitative analysis.
         
-        CHECKLIST:
-        1. MISSED ITEMS: Did the analyst miss any forward-looking guidance (Revenue, EPS, Margins, Capex)?
-        2. FALSE POSITIVES: Did the analyst extract HISTORICAL data (past tense) as guidance? Remove it.
-        3. OPERATIONAL METRICS: Did the analyst extract non-financial metrics (headcount, roles)? Remove them.
-        4. ACCURACY: Are the numbers and units correct?
+        IMPORTANT: Keep your internal reasoning CONCISE and FOCUSED. Do not over-analyze unrelated details.
         
-        Return the FINAL, CORRECTED list of guidance items.
+        INPUT:
+        1. Source Text (Earnings release/filing)
+        2. Extracted Guidance Items (Raw numbers)
         
-        No need to change the statement_text as long as you can make sure the extracted fields match with the source text which is the most important!
-
-        CRITICAL - PER ITEM REVIEW:
-        For EACH item in the list, you MUST populate these fields:
-        - 'agentic_review_comment': Specific note for this item. 
-          * If unchanged: "Verified: Matches source text."
-          * If corrected: "Correction: Changed [field] from X to Y."
-          * If added: "Added: Missed in initial pass."
-        - 'was_updated_by_agent': true if you modified or added this item, false if it is unchanged.
-
-        Also provide a global 'review_summary' for the whole document.
+        YOUR JOB:
+        For EACH guidance item, analyze the surrounding context and determine:
+        1. SENTIMENT: Is this guidance Positive (Bullish), Negative (Bearish), or Neutral?
+           - "Positive": Raising guidance, beating estimates, strong growth.
+           - "Negative": Lowering guidance, missing estimates, headwinds.
+           - "Cautious": "Uncertainty", "conservative approach", "macro headwinds".
+           - "Optimistic": "Strong momentum", "tailwinds", "record demand".
+        
+        2. SCORE: Assign a sentiment score from 0.0 (Disaster) to 1.0 (Euphoric). 0.5 is Neutral.
+        
+        3. RISK FACTORS: Identify specific risks mentioned as reasons for this guidance (e.g., "FX headwinds", "Supply Chain", "Inflation", "China demand").
+        
+        4. VERIFICATION: Briefly check if the numbers match the text. If they are wrong, correct them.
+        
+        OUTPUT:
+        Return the list of guidance items with these new fields populated:
+        - 'sentiment_label': One of ["positive", "negative", "neutral", "cautious", "optimistic"]
+        - 'sentiment_score': Float between 0.0 and 1.0
+        - 'risk_factors': String listing key risks (e.g. "Currency, Inflation")
+        - 'agentic_review_comment': Your CONCISE analysis summary (e.g. "Raised outlook due to strong AI demand, despite FX headwinds.")
         """
     
     def _extract_relevant_sections(self, text: str, context_chars: int = 500) -> str:
@@ -240,6 +260,9 @@ class LLMExtractor:
             print(f"  [WARN] Truncating focused text from {len(focused_text)} to {max_chars} chars")
             focused_text = focused_text[:max_chars] + "\n... [truncated]"
         
+        # Capture start time for performance tracking
+        processing_start_time = time.time()
+
         # Retry logic for LLM calls
         result = None
         last_error = None
@@ -274,6 +297,9 @@ class LLMExtractor:
             print(f"  [ERROR] Extraction failed after {self.max_retries} attempts")
             return []
         
+        # Calculate duration
+        processing_duration = time.time() - processing_start_time
+
         try:
             # The program was configured to output MultiGuidanceExtraction where
             # each item is (or can be parsed into) the Guidance pydantic model.
@@ -300,6 +326,9 @@ class LLMExtractor:
                     if metadata.get("fetched_at"):
                         parsed.ingested_at = metadata.get("fetched_at")
                     
+                    # Set processing duration
+                    parsed.processing_duration_seconds = processing_duration
+
                     # Set extraction time (now)
                     parsed.extracted_at = datetime.now(timezone.utc).isoformat()
 
@@ -465,6 +494,9 @@ class LLMExtractor:
         This satisfies the "Agentic" requirement for research by implementing
         a feedback loop where the model critiques and corrects its own output.
         """
+        # Capture total start time (Stage 1 + Stage 2)
+        total_start_time = time.time()
+
         # Stage 1: Initial Extraction
         print("  [AGENT] Stage 1: Initial Extraction...")
         initial_items = self.extract_from_text(text, metadata)
@@ -488,10 +520,11 @@ class LLMExtractor:
         try:
             # Create the review program
             # We reuse MultiGuidanceExtraction as the output format
+            # Use self.agentic_llm (Reasoning model) for this step
             program = LLMTextCompletionProgram.from_defaults(
                 output_cls=MultiGuidanceExtraction,
                 prompt_template_str=self.refinement_prompt + "\n\nSOURCE TEXT:\n{text}\n\nPREVIOUSLY EXTRACTED ITEMS:\n{current_extraction}\n\nCORRECTED ITEMS:",
-                llm=self.llm,
+                llm=self.agentic_llm,
                 verbose=False
             )
             
@@ -521,13 +554,16 @@ class LLMExtractor:
                 # Tag this item as coming from the agentic review process
                 parsed.extraction_method = "agentic_review"
                 
-                # Tag this item as coming from the agentic review process
-                parsed.extraction_method = "agentic_review"
-                
                 # Use the item-specific comment if the LLM provided it (as requested in prompt)
                 # Fallback to global summary only if missing
                 if not parsed.agentic_review_comment:
                     parsed.agentic_review_comment = summary
+                
+                # Ensure sentiment fields are populated (if LLM missed them, set defaults)
+                if not parsed.sentiment_label:
+                    parsed.sentiment_label = "neutral"
+                if parsed.sentiment_score is None:
+                    parsed.sentiment_score = 0.5
                 
                 # Use item-specific flag if provided, otherwise fallback to global change flag
                 if parsed.was_updated_by_agent is None:
@@ -540,11 +576,20 @@ class LLMExtractor:
                 print(f"  [AGENT] Refinement changed item count: {len(initial_items)} -> {len(refined_items)}")
             else:
                 print("  [AGENT] Refinement kept item count same (content may have changed).")
-                
+            
+            # Update duration to reflect TOTAL time (Stage 1 + Stage 2)
+            total_duration = time.time() - total_start_time
+            for item in refined_items:
+                item.processing_duration_seconds = total_duration
+
             return refined_items
             
         except Exception as e:
             print(f"  [AGENT] Refinement failed: {e}. Returning initial extraction.")
+            # Update duration to reflect the time spent failing
+            total_duration = time.time() - total_start_time
+            for item in initial_items:
+                item.processing_duration_seconds = total_duration
             return initial_items
 
 

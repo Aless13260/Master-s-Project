@@ -24,10 +24,6 @@ import tempfile
 import os
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 TZ = zoneinfo.ZoneInfo("Asia/Kuala_Lumpur")
 UA = "AgenticFinanceResearchBot/0.1 (contact: aless13260@gmail.com)"
@@ -114,65 +110,8 @@ def find_exhibit_from_index(html: str, base_url: str) -> str | None:
         return None
     return None
 
-def find_sublinks_in_text(extracted_text: str, base_url: str) -> list[Dict[str, Any]]:
-    """Find URLs in extracted text and return them as sublink dictionaries.
-    
-    Args:
-        extracted_text: The main extracted text content
-        base_url: Base URL to resolve relative links
-        
-    Returns:
-        List of sublink dictionaries with url, extracted_text, fetch_status, similarity_to_main fields
-    """
-    if not extracted_text:
-        return []
-    
-    # Regex pattern to find URLs in text
-    url_pattern = re.compile(
-        r'https?://[^\s<>"\']+|www\.[^\s<>"\']+',
-        re.IGNORECASE
-    )
-    
-    urls = url_pattern.findall(extracted_text)
-    sublinks = []
-    
-    for url in urls:
-        # Clean up the URL (remove trailing punctuation)
-        url = re.sub(r'[.,;:!?)]+$', '', url)
-        
-        # Add protocol if missing for www links
-        if url.lower().startswith('www.'):
-            url = 'https://' + url
-            
-        # Skip if it looks like a PDF
-        if looks_like_pdf(url):
-            continue
-            
-        # Create sublink dictionary
-        sublink = {
-            "url": url,
-            "extracted_text": None,
-            "fetch_status": "pending",
-            "similarity_to_main": 0.0
-        }
-        sublinks.append(sublink)
-    
-    return sublinks
 
-def compute_similarity(text1: str, text2: str) -> float:
-    """Compute TF-IDF cosine similarity between two texts."""
-    if not text1 or not text2:
-        return 0.0
-    
-    try:
-        vectorizer = TfidfVectorizer()
-        vectors = vectorizer.fit_transform([text1, text2])
-        similarity = cosine_similarity(vectors[0:1], vectors[1:2])[0][0]
-        return float(similarity)
-    except Exception:
-        return 0.0
-
-def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_candidates: bool = True, mark_skipped: bool = False, delay: float = 1, no_cache: bool = False, cache_path: Path | None = None) -> int:
+def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_candidates: bool = True, mark_skipped: bool = False, delay: float = 0.15, no_cache: bool = False, cache_path: Path | None = None) -> int:
     seen = set()
     # choose cache path
     chosen_cache = Path(cache_path) if cache_path else CACHE_PATH
@@ -251,8 +190,7 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
                 "discovered_at": p.get("discovered_at"),
                 "fetched_at": dt.datetime.now(TZ).isoformat(),
                 "fetch_status": "skipped",
-                "extracted_text": None,
-                "sublinks": []
+                "extracted_text": None
             }
 
             if looks_like_pdf(link):
@@ -350,21 +288,6 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
             else:
                 item["fetch_status"] = "extract_failed"
             
-            # Find sublinks in the extracted text
-            item["sublinks"].extend(find_sublinks_in_text(text or "", link))
-
-            # Add sublink extraction (if any)
-            if item["sublinks"]:
-                for sublink in item["sublinks"]:
-                    # Fetch the sublink content
-                    sub_resp = fetch_url(sublink["url"])
-                    if sub_resp:
-                        subtext = extract_with_trafilatura(sub_resp.text, sublink["url"])
-                    else:
-                        subtext = None
-                    sublink["extracted_text"] = subtext
-                    sublink["fetch_status"] = "ok" if subtext else "extract_failed"
-                    sublink["similarity_to_main"] = compute_similarity(text or "", subtext or "")
             # Compute a content hash of the normalized extracted text and update cache
             content_hash = None
             if text:
@@ -420,4 +343,4 @@ def main(pointers_path: Path = POINTERS_PATH, out_path: Path = OUT_PATH, only_ca
 if __name__ == "__main__":
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else POINTERS_PATH
     # You can set a custom delay here, e.g., delay=0.05 for faster processing
-    main(path, delay=0.2)
+    main(path, delay=0.15)

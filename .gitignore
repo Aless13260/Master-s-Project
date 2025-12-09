@@ -14,3 +14,4 @@ __pycache__/
 *.sqlite
 # Local tooling and analysis outputs
 tools/
+pointerEvents/

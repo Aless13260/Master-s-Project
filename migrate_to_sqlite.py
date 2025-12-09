@@ -78,6 +78,10 @@ def create_tables(conn):
             extracted_at TEXT,
             extraction_method TEXT,
             agentic_review_comment TEXT,
+            sentiment_label TEXT,
+            sentiment_score REAL,
+            risk_factors TEXT,
+            processing_duration_seconds REAL,
             FOREIGN KEY(content_uid) REFERENCES contents(uid)
         )
     ''')
@@ -193,8 +197,9 @@ def migrate_guidance(conn, file_path):
                         change_pct_low, change_pct_high,
                         is_quantitative, statement_text,
                         published_at, ingested_at, extracted_at,
-                        extraction_method, agentic_review_comment
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        extraction_method, agentic_review_comment,
+                        sentiment_label, sentiment_score, risk_factors, processing_duration_seconds
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     guid_id,
                     row_uid, # content_uid comes from the top level 'uid'
@@ -215,7 +220,11 @@ def migrate_guidance(conn, file_path):
                     g.get('ingested_at'),
                     g.get('extracted_at'),
                     g.get('extraction_method', 'standard'), # Default to 'standard' if missing
-                    g.get('agentic_review_comment') if g.get('extraction_method') == 'agentic_review' else None
+                    g.get('agentic_review_comment') if g.get('extraction_method') == 'agentic_review' else None,
+                    g.get('sentiment_label'),
+                    g.get('sentiment_score'),
+                    g.get('risk_factors'),
+                    g.get('processing_duration_seconds')
                 ))
                 count += 1
             except Exception as e:

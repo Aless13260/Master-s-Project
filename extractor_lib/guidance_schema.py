@@ -53,6 +53,9 @@ class Guidance(BaseModel):
     published_at: Optional[str] = None  # When the document was published by the source
     ingested_at: Optional[str] = None   # When the document was fetched/ingested by our system
     extracted_at: Optional[str] = None  # When this guidance item was extracted (output created)
+    
+    # Performance metrics
+    processing_duration_seconds: Optional[float] = None # Time taken for LLM processing in seconds
 
     # Track which pipeline stage produced this item (for research comparison)
     extraction_method: Optional[Literal["standard", "agentic_review"]] = "standard"
@@ -60,6 +63,11 @@ class Guidance(BaseModel):
     # Agentic review details (for debugging/analysis)
     agentic_review_comment: Optional[str] = None
     was_updated_by_agent: Optional[bool] = False
+    
+    # Agentic Enrichment (New for Thesis)
+    sentiment_label: Optional[Literal["positive", "negative", "neutral", "cautious", "optimistic"]] = None
+    sentiment_score: Optional[float] = None # 0.0 to 1.0 (0=Bearish, 1=Bullish)
+    risk_factors: Optional[str] = None # Comma-separated list of risks mentioned (e.g. "FX, Supply Chain")
 
     def to_dict(self) -> dict:
         return self.model_dump()
