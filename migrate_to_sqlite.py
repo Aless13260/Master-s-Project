@@ -7,9 +7,9 @@ import argparse
 import hashlib
 
 # Paths
-BASE_DIR = Path(__file__).parent.parent
+BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "finance_data.db"
-CONTENTS_PATH = BASE_DIR / "pointerEvents" / "contents.jsonl"
+CONTENTS_PATH = BASE_DIR / "ingestion_json" / "contents.jsonl"
 CANDIDATES_PATH = BASE_DIR / "extractor_lib" / "candidate_guidance.jsonl"
 GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance.jsonl"
 AGENTIC_GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance_agentic.jsonl"

@@ -49,50 +49,59 @@ def score_text(text: str) -> dict:
     return {"matched_patterns": matches, "match_score": score, "confidence": confidence, "match_count": len(matches)}
 
 
-def extract_candidates(input_path: Path, output_path: Path, min_confidence: float = 0.2):
+def extract_candidates(input_paths: list[Path], output_path: Path, min_confidence: float = 0.2):
     total = 0
     kept = 0
     out_f = output_path.open("w", encoding="utf-8")
 
-    with input_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            total += 1
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
+    for input_path in input_paths:
+        if not input_path.exists():
+            print(f"Skipping missing input file: {input_path}")
+            continue
+            
+        print(f"Scanning {input_path}...")
+        with input_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                total += 1
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
 
-            text = obj.get("extracted_text") or obj.get("text") or obj.get("content") or obj.get("html") or ""
-            if not text:
-                continue
+                text = obj.get("extracted_text") or obj.get("text") or obj.get("content") or obj.get("html") or ""
+                if not text:
+                    continue
 
-            meta = score_text(text)
-            if meta["confidence"] >= min_confidence:
-                kept += 1
-                candidate = {
-                    "uid": obj.get("uid"),
-                    "source_id": obj.get("source_id"),
-                    "title": obj.get("title"),
-                    "source_url": obj.get("source_url") or obj.get("link") or obj.get("url"),
-                    "match_count": meta.get("match_count"),
-                    "matched_patterns": meta.get("matched_patterns"),
-                    "match_score": meta.get("match_score"),
-                    "confidence": meta.get("confidence"),
-                    "extracted_text_preview": text[:200].replace("\n", " "),
-                }
-                out_f.write(json.dumps(candidate, ensure_ascii=False) + "\n")
+                meta = score_text(text)
+                if meta["confidence"] >= min_confidence:
+                    kept += 1
+                    candidate = {
+                        "uid": obj.get("uid"),
+                        "source_id": obj.get("source_id"),
+                        "title": obj.get("title"),
+                        "source_url": obj.get("source_url") or obj.get("link") or obj.get("url"),
+                        "match_count": meta.get("match_count"),
+                        "matched_patterns": meta.get("matched_patterns"),
+                        "match_score": meta.get("match_score"),
+                        "confidence": meta.get("confidence"),
+                        "extracted_text_preview": text[:200].replace("\n", " "),
+                    }
+                    out_f.write(json.dumps(candidate, ensure_ascii=False) + "\n")
 
     out_f.close()
     return {"total": total, "kept": kept}
 
 
 if __name__ == "__main__":
+    base_dir = Path(__file__).parent.parent
+    input_paths = [
+        base_dir / "ingestion_json" / "contents.jsonl",
+        base_dir / "ingestion_json" / "pdf_contents.jsonl"
+    ]
+    output_path = base_dir / "extractor_lib" / "candidate_guidance.jsonl"
 
-    input_path = Path("C:/Users/aless/Github/FinanceProject/pointerEvents/contents.jsonl")
-    output_path = Path("C:/Users/aless/Github/FinanceProject/extractor_lib/candidate_guidance.jsonl")
-
-    stats = extract_candidates(input_path, output_path, min_confidence=0.5)
+    stats = extract_candidates(input_paths, output_path, min_confidence=0.5)
     print(f"Processed {stats['total']} records, kept {stats['kept']} candidates")

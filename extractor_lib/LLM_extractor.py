@@ -29,7 +29,7 @@ from extractor_lib.guidance_schema import Guidance
 
 # File paths
 CANDIDATES_PATH = Path("extractor_lib") / "candidate_guidance.jsonl"
-CONTENTS_PATH = Path("pointerEvents") / "contents.jsonl"
+CONTENTS_PATH = Path("ingestion_json") / "contents.jsonl"
 OUTPUT_PATH = Path("extractor_lib") / "extracted_guidance.jsonl"
 
 # Guidance keywords for smart text extraction (from regex_filter)
