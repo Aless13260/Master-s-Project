@@ -13,7 +13,7 @@ from llama_index.llms.openai import OpenAI
 load_dotenv()
 
 
-def setup_llm(provider="deepseek", model=None, temperature=0.0):
+def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
     """
     Configure LlamaIndex with the specified LLM provider.
     
@@ -21,6 +21,7 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0):
         provider: "deepseek", "github", "openai", "anthropic", or "ollama"
         model: Specific model name (or None for defaults)
         temperature: 0.0 for deterministic, higher for creative
+        timeout: Request timeout in seconds (default: 120.0)
     
     Returns:
         Configured LLM instance
@@ -37,8 +38,9 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0):
             api_key=api_key_deepseek,
             model=model,
             temperature=temperature,
+            timeout=timeout,
         )
-        print(f"[LLM] Using DeepSeek: {model}")
+        print(f"[LLM] Using DeepSeek: {model} (timeout={timeout}s)")
     
     elif provider == "github":
         api_key_chatGPT = os.getenv("OPENAI_API_KEY")
@@ -52,8 +54,9 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0):
             api_key=api_key_chatGPT,
             model=model,
             temperature=temperature,
+            timeout=timeout,
         )
-        print(f"[LLM] Using OpenAI: {model}")
+        print(f"[LLM] Using OpenAI: {model} (timeout={timeout}s)")
     
     
     else:

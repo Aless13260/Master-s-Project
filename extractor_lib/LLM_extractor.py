@@ -25,6 +25,10 @@ from pydantic import BaseModel, Field
 sys.path.append(str(Path(__file__).parent.parent))
 from llm_setup import setup_llm
 from extractor_lib.guidance_schema import Guidance
+from ticker_map import load_ticker_map
+
+# Load company mapping once
+COMPANY_MAP = load_ticker_map()
 
 
 # File paths
@@ -136,12 +140,15 @@ class LLMExtractor:
         - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
         - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025") (or null)
         - current_value: Current/most-recent numeric value (number or null)
-        - current_unit: MUST be one of: "USD", "EUR", "GBP", "%", "million", "billion", "units", "other" (or null)
+        - unit: MUST be one of: "million", "billion", "%" (or null)
         - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
         - guided_range_high: The high end of the range (if range). Leave null if single number. (number or null)
         - change_pct_low: The percent change value (if single number) OR low end of % range. (number or null)
         - change_pct_high: The high end of % range. Leave null if single number. (number or null)
-        - is_quantitative: true if guidance contains numeric guidance, false otherwise
+        - is_revision: true/false indicating if this is a revision to prior guidance, e.g. updated from our prior outlook of $94-99 billion would yield true (boolean)
+        - revision_direction: "increased", "decreased" or null, compared to previous guidance ONLY (string or null)
+        - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
+        - rationales: Any qualitative explanations or reasons given for this guidance, keep it brief (string or null)
 
         Do NOT extract historical results. Do NOT return past performance data.
         """
@@ -199,11 +206,18 @@ class LLMExtractor:
         # rather than historical results that appear before them.
         # Give minimal preceding context, but substantial trailing context.
         pre_context = 100  # Just enough to capture the intro phrase
-        post_context = 600  # Focus on what comes AFTER the guidance keyword
+        post_context = 800  # Focus on what comes AFTER the guidance keyword
         for pattern in GUIDANCE_KEYWORDS:
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 start = max(0, match.start() - pre_context)
                 end = min(len(text), match.end() + post_context)
+                
+                # Extend to the end of the sentence to avoid cutting off text
+                # Look ahead up to 300 chars for a sentence terminator or newline
+                snippet_after = text[end:min(len(text), end+300)]
+                sent_end_match = re.search(r'[.!?\n]', snippet_after)
+                if sent_end_match:
+                    end += sent_end_match.end()
                 
                 # Avoid duplicate overlapping sections
                 range_key = (start // 100, end // 100)  # Bucket by 100-char blocks
@@ -217,7 +231,8 @@ class LLMExtractor:
         for start, end, section in relevant_sections:
             if merged and start <= merged[-1][1]:
                 # Merge overlapping sections
-                merged[-1] = (merged[-1][0], max(end, merged[-1][1]), text[merged[-1][0]:max(end, merged[-1][1])])
+                new_end = max(end, merged[-1][1])
+                merged[-1] = (merged[-1][0], new_end, text[merged[-1][0]:new_end])
             else:
                 merged.append((start, end, section))
         
@@ -326,16 +341,17 @@ class LLMExtractor:
                     if metadata.get("fetched_at"):
                         parsed.ingested_at = metadata.get("fetched_at")
                     
-                    # Set processing duration
-                    parsed.processing_duration_seconds = processing_duration
-
                     # Set extraction time (now)
                     parsed.extracted_at = datetime.now(timezone.utc).isoformat()
 
                     if metadata.get("source_id"):
-                        # Map source_id to valid source_type schema to avoid validation errors
-                        # The schema restricts source_type to specific Literals
                         sid = str(metadata.get("source_id")).lower()
+                        
+                        # 1. Auto-fill Company Name from Source ID
+                        if not parsed.company and metadata.get("source_id") in COMPANY_MAP:
+                            parsed.company = COMPANY_MAP[metadata.get("source_id")]
+                        
+                        # 2. Map source_type
                         if "8-k" in sid or "8k" in sid:
                             parsed.source_type = "8-K"
                         elif "10-k" in sid or "10k" in sid:
@@ -472,6 +488,11 @@ class LLMExtractor:
                 guidance_items = deduplicated
                 
             if guidance_items:
+                # Amortize processing duration across all kept items
+                amortized_duration = processing_duration / len(guidance_items)
+                for item in guidance_items:
+                    item.processing_duration_seconds = amortized_duration
+                
                 print(f"  [LLM] Extracted {len(guidance_items)} guidance items")
             else:
                 print("  [LLM] No guidance items found")
@@ -579,8 +600,12 @@ class LLMExtractor:
             
             # Update duration to reflect TOTAL time (Stage 1 + Stage 2)
             total_duration = time.time() - total_start_time
-            for item in refined_items:
-                item.processing_duration_seconds = total_duration
+            
+            # Amortize duration across refined items
+            if refined_items:
+                amortized_duration = total_duration / len(refined_items)
+                for item in refined_items:
+                    item.processing_duration_seconds = amortized_duration
 
             return refined_items
             
@@ -588,8 +613,12 @@ class LLMExtractor:
             print(f"  [AGENT] Refinement failed: {e}. Returning initial extraction.")
             # Update duration to reflect the time spent failing
             total_duration = time.time() - total_start_time
-            for item in initial_items:
-                item.processing_duration_seconds = total_duration
+            
+            # Amortize duration across initial items (fallback)
+            if initial_items:
+                amortized_duration = total_duration / len(initial_items)
+                for item in initial_items:
+                    item.processing_duration_seconds = amortized_duration
             return initial_items
 
 

@@ -36,15 +36,20 @@ class Guidance(BaseModel):
 
     # Quantitative data
     current_value: Optional[float] = None
-    current_unit: Optional[Literal["USD", "EUR", "GBP", "%", "million", "billion", "units", "other"]] = None
+    unit: Optional[Literal["USD", "EUR", "GBP", "%", "million", "billion", "units", "other"]] = None
     # guided_value removed in favor of using guided_range_low for single values
     guided_range_low: Optional[float] = None
     guided_range_high: Optional[float] = None
     change_pct_low: Optional[float] = None
     change_pct_high: Optional[float] = None
 
+    # Revision / Qualitative
+    is_revision: Optional[bool] = None
+    revision_direction: Optional[Literal["increased", "decreased"]] = None
+    qualitative_direction: Optional[str] = None
+    rationales: Optional[str] = None
+
     # Metadata
-    is_quantitative: Optional[bool] = None
     statement_text: Optional[str] = None
     source_url: Optional[str] = None
     source_type: Optional[Literal["8-K", "10-K", "10-Q", "press_release", "earnings_call", "investor_presentation", "other"]] = None
