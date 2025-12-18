@@ -133,6 +133,9 @@ class LLMExtractor:
         REJECT past-tense verbs: was, were, reported, announced, increased, decreased, grew, ended, posted
         REJECT operational metrics: headcount, employees, roles, team size, users, subscribers (unless explicitly revenue-related)
 
+        You will extract guidance on financial statement items (revenue, earnings, etc.) and key operational metrics that directly
+        impact financial performance (e.g., AOV for marketplaces, subscriber growth for SaaS). Purely qualitative commentary without clear financial linkage is excluded.
+
         For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
         - company: Company name (string or null)
         - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
@@ -143,8 +146,6 @@ class LLMExtractor:
         - unit: MUST be one of: "million", "billion", "%" (or null)
         - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
         - guided_range_high: The high end of the range (if range). Leave null if single number. (number or null)
-        - change_pct_low: The percent change value (if single number) OR low end of % range. (number or null)
-        - change_pct_high: The high end of % range. Leave null if single number. (number or null)
         - is_revision: true/false indicating if this is a revision to prior guidance, e.g. updated from our prior outlook of $94-99 billion would yield true (boolean)
         - revision_direction: "increased", "decreased" or null, compared to previous guidance ONLY (string or null)
         - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
@@ -471,9 +472,7 @@ class LLMExtractor:
                             item.guidance_type == existing.guidance_type and
                             item.metric_name == existing.metric_name and
                             item.guided_range_low == existing.guided_range_low and
-                            item.guided_range_high == existing.guided_range_high and
-                            item.change_pct_low == existing.change_pct_low and
-                            item.change_pct_high == existing.change_pct_high
+                            item.guided_range_high == existing.guided_range_high
                         )
                         
                         # Only mark as duplicate if BOTH conditions are true
@@ -767,15 +766,6 @@ def main():
                         'title': title,
                         'guidance': guidance.to_dict()
                     }
-                    # Calculate change_pct_low/high if not provided but can be derived
-                    if (guidance.current_value and guidance.current_value != 0 and 
-                        guidance.guided_range_low and not guidance.change_pct_low):
-                        try:
-                            guidance.change_pct_low = (guidance.guided_range_low / guidance.current_value - 1) * 100
-                            if guidance.guided_range_high and not guidance.change_pct_high:
-                                guidance.change_pct_high = (guidance.guided_range_high / guidance.current_value - 1) * 100
-                        except (ZeroDivisionError, TypeError):
-                            pass  # Keep original values if calculation fails
                     all_extractions.append(extraction_record)
             else:
                 print(f"  [WARN] No guidance extracted")

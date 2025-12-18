@@ -40,8 +40,6 @@ class Guidance(BaseModel):
     # guided_value removed in favor of using guided_range_low for single values
     guided_range_low: Optional[float] = None
     guided_range_high: Optional[float] = None
-    change_pct_low: Optional[float] = None
-    change_pct_high: Optional[float] = None
 
     # Revision / Qualitative
     is_revision: Optional[bool] = None

@@ -69,8 +69,6 @@ def create_tables(conn):
             unit TEXT,
             guided_range_low REAL,
             guided_range_high REAL,
-            change_pct_low REAL,
-            change_pct_high REAL,
             is_revision BOOLEAN,
             revision_direction TEXT,
             qualitative_direction TEXT,
@@ -197,13 +195,12 @@ def migrate_guidance(conn, file_path):
                         guid, content_uid, source_id, company, guidance_type, metric_name,
                         reporting_period, current_value, unit, 
                         guided_range_low, guided_range_high, 
-                        change_pct_low, change_pct_high,
                         is_revision, revision_direction, qualitative_direction, rationales,
                         statement_text,
                         published_at, ingested_at, extracted_at,
                         extraction_method, agentic_review_comment,
                         sentiment_label, sentiment_score, risk_factors, processing_duration_seconds
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     guid_id,
                     row_uid, # content_uid comes from the top level 'uid'
@@ -216,8 +213,6 @@ def migrate_guidance(conn, file_path):
                     g.get('unit'),
                     g.get('guided_range_low'),
                     g.get('guided_range_high'),
-                    g.get('change_pct_low'),
-                    g.get('change_pct_high'),
                     g.get('is_revision'),
                     g.get('revision_direction'),
                     g.get('qualitative_direction'),
