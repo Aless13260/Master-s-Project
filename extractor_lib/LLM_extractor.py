@@ -141,7 +141,7 @@ class LLMExtractor:
         - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
         - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
         - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
-        - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025") (or null)
+        - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025", keep format consistent e.g. don't vary format to sometimes say full-year 2024, sometimes FY2024)  (or null)
         - current_value: Current/most-recent numeric value (number or null)
         - unit: MUST be one of: "million", "billion", "%" (or null)
         - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
@@ -490,7 +490,7 @@ class LLMExtractor:
                 # Amortize processing duration across all kept items
                 amortized_duration = processing_duration / len(guidance_items)
                 for item in guidance_items:
-                    item.processing_duration_seconds = amortized_duration
+                    item.processing_duration_seconds = round(amortized_duration, 2)
                 
                 print(f"  [LLM] Extracted {len(guidance_items)} guidance items")
             else:
