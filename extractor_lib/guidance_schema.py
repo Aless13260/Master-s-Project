@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional, Literal
 from uuid import uuid4
 from datetime import datetime, timezone
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Guidance(BaseModel):
@@ -71,6 +71,21 @@ class Guidance(BaseModel):
     sentiment_label: Optional[Literal["positive", "negative", "neutral", "cautious", "optimistic"]] = None
     sentiment_score: Optional[float] = None # 0.0 to 1.0 (0=Bearish, 1=Bullish)
     risk_factors: Optional[str] = None # Comma-separated list of risks mentioned (e.g. "FX, Supply Chain")
+
+    @field_validator("guid", mode="before")
+    @classmethod
+    def _coerce_guid(cls, value):
+        """Ensure guid is always a non-empty string.
+
+        Some LLM runs intermittently return `null` for `guid`, which fails Pydantic
+        validation and triggers extractor retries. We treat missing/empty guids as
+        a signal to auto-generate one.
+        """
+        if value is None:
+            return uuid4().hex
+        if isinstance(value, str) and not value.strip():
+            return uuid4().hex
+        return value
 
     def to_dict(self) -> dict:
         return self.model_dump()

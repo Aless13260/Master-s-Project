@@ -36,6 +36,7 @@ import re
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+OUTPUT_PATH = "synthetic_guidance_output.jsonl"
 # LLM imports (optional, only needed for --use-llm mode)
 LLM_AVAILABLE = False
 try:
@@ -500,17 +501,17 @@ class LLMTextGenerator:
     The structured guidance data remains deterministic; only prose is LLM-generated.
     """
     
-    def __init__(self, provider: str = "deepseek", temperature: float = 0.7):
+    def __init__(self, provider: str = "deepseek", temperature: float = 0.7, timeout: float = 60.0):
         """Initialize LLM for text generation."""
         if not LLM_AVAILABLE:
             raise RuntimeError("LLM setup not available. Ensure llm_setup.py exists and DEEPSEEK_API_KEY is set.")
         
-        self.llm = setup_llm(provider=provider, temperature=temperature)
+        self.llm = setup_llm(provider=provider, temperature=temperature, timeout=timeout)
         self.cache = {}  # Simple cache to avoid repeated calls for similar inputs
-        print(f"[LLM TextGen] Initialized with {provider} (temperature={temperature})")
+        print(f"[LLM TextGen] Initialized with {provider} (temperature={temperature}, timeout={timeout}s)")
     
     def _call_llm(self, prompt: str, cache_key: str = None) -> str:
-        """Call LLM with optional caching."""
+        """Call LLM with optional caching and error handling."""
         if cache_key and cache_key in self.cache:
             return self.cache[cache_key]
         
@@ -522,8 +523,10 @@ class LLMTextGenerator:
                 self.cache[cache_key] = result
             
             return result
+        except KeyboardInterrupt:
+            raise  # Re-raise keyboard interrupt
         except Exception as e:
-            print(f"[LLM TextGen] Error: {e}")
+            print(f"[LLM TextGen] Error calling LLM: {type(e).__name__}: {e}")
             return None
     
     def generate_ceo_statement(self, company: dict, quarter: str, year: int, 
@@ -778,7 +781,7 @@ class SyntheticGuidanceGenerator:
     """
     
     def __init__(self, config: dict = None, seed: int = None, use_llm: bool = False, 
-                 llm_provider: str = "deepseek", llm_temperature: float = 0.7):
+                 llm_provider: str = "deepseek", llm_temperature: float = 0.7, llm_timeout: float = 60.0):
         self.config = config or DISTRIBUTION_CONFIG
         if seed is not None:
             random.seed(seed)
@@ -791,7 +794,11 @@ class SyntheticGuidanceGenerator:
         self.llm_generator = None
         if use_llm:
             try:
-                self.llm_generator = LLMTextGenerator(provider=llm_provider, temperature=llm_temperature)
+                self.llm_generator = LLMTextGenerator(
+                    provider=llm_provider, 
+                    temperature=llm_temperature,
+                    timeout=llm_timeout,
+                )
                 print(f"[Generator] LLM text generation enabled")
             except Exception as e:
                 print(f"[Generator] Warning: LLM initialization failed: {e}")
@@ -1125,15 +1132,23 @@ Exhibit 99.1
                 "company": company,
                 "has_too_specific_fls": has_too_specific_fls,
                 "generation_timestamp": self.base_date.isoformat(),
-                "generator_version": "1.0.0",
+                "generator_version": "1.1.0",
+                "llm_augmented": self.use_llm,
             },
         )
         
         return doc
     
     def generate_dataset(self, count: int) -> list[SyntheticDocument]:
-        """Generate multiple synthetic documents."""
-        return [self.generate_document() for _ in range(count)]
+        """Generate multiple synthetic documents with progress tracking."""
+        documents = []
+        for i in range(count):
+            # We don't know the company yet, so we'll just show the index
+            doc = self.generate_document()
+            company_name = doc.synthetic_metadata["company"]["name"]
+            print(f"  [{i+1}/{count}] Generated: {company_name:<30}", flush=True)
+            documents.append(doc)
+        return documents
 
 
 # =============================================================================
@@ -1298,6 +1313,12 @@ def main():
         default=0.7,
         help="LLM temperature for text generation (default: 0.7, higher = more creative)"
     )
+    parser.add_argument(
+        "--llm-timeout",
+        type=float,
+        default=60.0,
+        help="LLM request timeout in seconds (default: 60.0)"
+    )
     
     args = parser.parse_args()
     
@@ -1347,6 +1368,7 @@ def main():
         use_llm=args.use_llm,
         llm_provider=args.llm_provider,
         llm_temperature=args.llm_temperature,
+        llm_timeout=args.llm_timeout,
     )
     
     mode_str = "LLM-augmented" if args.use_llm else "template-based"
@@ -1354,9 +1376,10 @@ def main():
     documents = generator.generate_dataset(args.count)
     
     # Write output
-    output_path = Path(args.output)
-    if not output_path.is_absolute():
-        output_path = Path(__file__).parent / output_path
+    if Path(args.output):
+        output_path = Path(args.output)
+    else:
+        output_path = OUTPUT_PATH
     
     with open(output_path, 'w', encoding='utf-8') as f:
         for doc in documents:
