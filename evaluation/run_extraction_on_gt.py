@@ -10,26 +10,30 @@ sys.path.append(str(Path(__file__).parent.parent))
 from extractor_lib.LLM_extractor import LLMExtractor
 
 GT_DIR = Path("evaluation") / "ground_truth"
-CONTENTS_PATH = Path("ingestion_json") / "contents.jsonl"
+CONTENTS_PATHS = [
+    Path("ingestion_json") / "contents_8k.jsonl",
+    Path("ingestion_json") / "contents_IR.jsonl"
+]
 OUTPUT_FILE_STANDARD = Path("evaluation") / "extracted_on_gt.jsonl"
 OUTPUT_FILE_AGENTIC = Path("evaluation") / "extracted_on_gt_agentic.jsonl"
 
 def load_full_contents():
-    """Load full text content from ingestion_json/contents.jsonl"""
+    """Load full text content from ingestion_json/contents_*.jsonl"""
     contents = {}
-    if CONTENTS_PATH.exists():
-        print(f"Loading full contents from {CONTENTS_PATH}...")
-        with open(CONTENTS_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    try:
-                        record = json.loads(line)
-                        uid = record.get("uid")
-                        text = record.get("extracted_text")
-                        if uid and text:
-                            contents[uid] = text
-                    except Exception:
-                        continue
+    for path in CONTENTS_PATHS:
+        if path.exists():
+            print(f"Loading full contents from {path}...")
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            record = json.loads(line)
+                            uid = record.get("uid")
+                            text = record.get("extracted_text")
+                            if uid and text:
+                                contents[uid] = text
+                        except Exception:
+                            continue
     return contents
 
 def load_gt_records():
@@ -56,13 +60,34 @@ def main():
     print(f"Mode: {'Agentic' if args.agentic else 'Standard'}")
     print(f"Output: {output_file}")
 
+    # Check for existing progress
+    existing_uids = set()
+    if output_file.exists():
+        print(f"Checking existing output in {output_file}...")
+        with open(output_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        rec = json.loads(line)
+                        if "uid" in rec:
+                            existing_uids.add(rec["uid"])
+                    except:
+                        pass
+        print(f"Found {len(existing_uids)} already processed documents.")
+
     # Initialize extractor
     # Using deepseek as default provider, adjust if needed
     extractor = LLMExtractor(provider="deepseek", temperature=0.0)
     
-    with open(output_file, "w", encoding="utf-8") as out_f:
+    # Open in append mode to resume
+    with open(output_file, "a", encoding="utf-8") as out_f:
         for i, record in enumerate(records):
             uid = record.get("uid")
+            
+            if uid in existing_uids:
+                print(f"Skipping {i+1}/{len(records)}: {uid} (already processed)")
+                continue
+
             # Prefer full text from contents.jsonl, fallback to snippet in GT file
             text = full_contents.get(uid) or record.get("full_text_snippet")
             
@@ -79,17 +104,16 @@ def main():
                 else:
                     guidance_items = extractor.extract_from_text(text)
                 
-                for item in guidance_items:
-                    # Convert Pydantic model to dict
-                    item_dict = item.model_dump()
-                    
-                    # Write to output in the format expected by evaluation script
-                    output_record = {
-                        "uid": uid,
-                        "guidance": item_dict
-                    }
-                    out_f.write(json.dumps(output_record, ensure_ascii=False) + "\n")
-                    out_f.flush()
+                # Convert Pydantic models to dicts
+                guidance_dicts = [item.model_dump() for item in guidance_items]
+                
+                # Write to output in the format expected by evaluation script (one record per UID)
+                output_record = {
+                    "uid": uid,
+                    "guidance": guidance_dicts
+                }
+                out_f.write(json.dumps(output_record, ensure_ascii=False) + "\n")
+                out_f.flush()
                     
             except Exception as e:
                 print(f"  Error processing {uid}: {e}")

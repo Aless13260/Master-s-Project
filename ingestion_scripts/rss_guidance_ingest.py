@@ -123,83 +123,66 @@ if __name__ == "__main__":
     parser.add_argument("--allow-all", action="store_true", help="Do not filter entries by guidance keywords or skip types (use for analysis)")
     args = parser.parse_args()
     sources_path = args.sources
-    out_path     = PROJECT_ROOT / "ingestion_json" / "pointers.json"
+    
+    POINTERS_8K = PROJECT_ROOT / "ingestion_json" / "pointers_8k.json"
+    POINTERS_IR = PROJECT_ROOT / "ingestion_json" / "pointers_IR.json"
 
     seen: Set[str] = set()
 
-    # Load existing pointer records (if any)
-    existing_records: List[Dict[str, Any]] = []
-    try:
-        with open(out_path, "r", encoding="utf-8") as f:
-            for line in f:
-                ln = line.strip()
-                if not ln:
-                    continue
-                try:
-                    obj = json.loads(ln)
-                    existing_records.append(obj)
-                except Exception:
-                    continue
-    except FileNotFoundError:
-        existing_records = []
-
-    # Detect sources removed from sources.yaml and prune their records
-    current_source_ids = {s["id"] for s in load_feeds(sources_path)}
-    existing_source_ids = {r.get("source_id") for r in existing_records if r.get("source_id")}
-    deleted_sources = existing_source_ids - current_source_ids
-    if deleted_sources:
-        print(f"[INFO] Detected deleted sources: {deleted_sources}. Pruning corresponding records.")
-        # Rewrite pointers file without events from deleted sources
-        remaining = [r for r in existing_records if r.get("source_id") not in deleted_sources]
-        with open(out_path, "w", encoding="utf-8") as f:
-            for r in remaining:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-        # Also prune contents.jsonl (if present) for matching UIDs
-        contents_path = out_path.replace("pointers.json", "contents.jsonl")
-        try:
-            kept_lines: List[str] = []
-            with open(contents_path, "r", encoding="utf-8") as cf:
-                for ln in cf:
-                    ln_strip = ln.strip()
-                    if not ln_strip:
-                        continue
-                    try:
-                        obj = json.loads(ln_strip)
-                        if obj.get("source_id") in deleted_sources:
+    # Load existing pointer records from BOTH files
+    for path in [POINTERS_8K, POINTERS_IR]:
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        ln = line.strip()
+                        if not ln:
                             continue
-                        kept_lines.append(ln_strip)
-                    except Exception:
-                        # keep unparsable lines
-                        kept_lines.append(ln_strip)
-            with open(contents_path, "w", encoding="utf-8") as cf:
-                for ln in kept_lines:
-                    cf.write(ln + "\n")
-        except FileNotFoundError:
-            pass
+                        try:
+                            obj = json.loads(ln)
+                            uid = obj.get("uid")
+                            if uid:
+                                seen.add(uid)
+                        except Exception:
+                            continue
+            except Exception as e:
+                print(f"[WARN] Error reading {path}: {e}")
 
-        existing_records = remaining
-
-    # Build seen set from remaining existing records to avoid duplicates
-    for r in existing_records:
-        uid = r.get("uid")
-        if uid:
-            seen.add(uid)
-
-    # iterate feeds and collect new events into memory first, then append to file
-    new_events = []
+    # iterate feeds and collect new events
+    new_events_8k = []
+    new_events_ir = []
+    
+    print("Fetching feeds...")
     for ev in iter_pointer_events(sources_path, allow_all=args.allow_all):
         if ev["uid"] in seen:
             continue
         seen.add(ev["uid"])
-        new_events.append(ev)
+        
+        # Determine destination based on content
+        title = (ev.get("title") or "").lower()
+        source_id = (ev.get("source_id") or "").lower()
+        categories = [c.lower() for c in ev.get("categories") or []]
+        
+        is_8k = "8-k" in title or "8k" in source_id or any("8-k" in c for c in categories)
+        
+        if is_8k:
+            new_events_8k.append(ev)
+        else:
+            new_events_ir.append(ev)
 
-    # append to a JSONL queue file in one go
-    new_count = 0
-    if new_events:
-        with open(out_path, "a", encoding="utf-8") as out:
-            for ev in new_events:
+    # Append to files
+    if new_events_8k:
+        with open(POINTERS_8K, "a", encoding="utf-8") as out:
+            for ev in new_events_8k:
                 out.write(json.dumps(ev, ensure_ascii=False) + "\n")
-                new_count += 1
-    print(f"Wrote {new_count} new pointer events → {out_path}")
+        print(f"Wrote {len(new_events_8k)} new 8-K events → {POINTERS_8K}")
+        
+    if new_events_ir:
+        with open(POINTERS_IR, "a", encoding="utf-8") as out:
+            for ev in new_events_ir:
+                out.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        print(f"Wrote {len(new_events_ir)} new IR events → {POINTERS_IR}")
+        
+    if not new_events_8k and not new_events_ir:
+        print("No new events found.")
 

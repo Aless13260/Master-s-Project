@@ -80,7 +80,7 @@ def load_ground_truth(gt_paths):
 def load_extracted_data(extracted_path):
     """
     Load extracted data.
-    Assumes extracted data is one guidance item per line, with a 'uid' field linking to the document.
+    Supports both one guidance item per line (dict) and grouped items per line (list).
     Returns a dictionary mapping uid -> list of guidance items.
     """
     print(f"Loading extracted data from {extracted_path}...")
@@ -90,10 +90,13 @@ def load_extracted_data(extracted_path):
         uid = record.get('uid')
         if not uid:
             continue
-        # The extracted format seems to be {"uid": ..., "guidance": {...}}
-        guidance_item = record.get('guidance')
-        if guidance_item:
-            extracted_by_uid[uid].append(guidance_item)
+        
+        guidance_data = record.get('guidance')
+        if guidance_data:
+            if isinstance(guidance_data, list):
+                extracted_by_uid[uid].extend(guidance_data)
+            else:
+                extracted_by_uid[uid].append(guidance_data)
     return extracted_by_uid
 
 def calculate_similarity(text1, text2):
