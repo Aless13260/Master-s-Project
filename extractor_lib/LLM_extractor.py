@@ -20,7 +20,7 @@ from uuid import uuid4
 import argparse
 from llama_index.core.program import LLMTextCompletionProgram
 from pydantic import BaseModel, Field
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 # Import your LLM setup and guidance schema
 sys.path.append(str(Path(__file__).parent.parent))
 from llm_setup import setup_llm
@@ -673,6 +673,7 @@ def main():
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
     parser.add_argument("--agentic", action="store_true", help="Enable agentic self-correction loop (slower but more accurate)")
+    parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers to use")
     
     args = parser.parse_args()
 
@@ -710,71 +711,99 @@ def main():
     print()
     
     # Extract guidance
-    print("Starting extraction...")
+    print("Starting parallel extraction...")
+    print(f"Using {args.workers} workers")
     print("-" * 60)
     
     all_extractions = []
     success_count = 0
     error_count = 0
     
-    for i, candidate in enumerate(candidates, 1):
+    # Create a single extractor instance to share (if thread-safe) or create per-thread
+    # Since we're using llama-index which might have shared state, let's create per-thread
+    # But we need to pass the config, not the instance
+    
+    def process_candidate(candidate_data):
+        """Process a single candidate - returns (success, extraction_records, error_msg)"""
+        i, candidate, contents = candidate_data
         uid = candidate['uid']
         title = candidate.get('title', 'N/A')
         
-        print(f"\n[{i}/{len(candidates)}] Processing: {title[:80]}")
-        print(f"  UID: {uid}")
-        
-        # Get full content
-        content_record = contents.get(uid)
-        if not content_record:
-            print(f"  [SKIP] No content found for UID {uid}")
-            error_count += 1
-            continue
-        
-        full_text = content_record.get('extracted_text', '')
-        if not full_text:
-            print(f"  [SKIP] Empty text for UID {uid}")
-            error_count += 1
-            continue
-        
-        print(f"  Text length: {len(full_text):,} chars")
-        
-        # Extract metadata
-        metadata = {
-            'source_url': candidate.get('source_url'),
-            'published_at': content_record.get('published_at'),
-            'fetched_at': content_record.get('fetched_at'),
-            'source_id': candidate.get('source_id'),
-            'match_patterns': candidate.get('matched_patterns', [])
-        }
-        
-        # Run extraction
         try:
-            if args.agentic:
-                guidance_items = extractor.extract_with_agentic_review(full_text, metadata)
-            else:
-                guidance_items = extractor.extract_from_text(full_text, metadata)
+            content_record = contents.get(uid)
+            if not content_record:
+                return (False, [], f"No content for {uid}")
             
-            if guidance_items:
-                success_count += 1
-                # Save each guidance item with source info
-                for guidance in guidance_items:
-                    extraction_record = {
-                        'uid': uid,
-                        'source_id': metadata['source_id'],
-                        'source_url': metadata['source_url'],
-                        'title': title,
-                        'guidance': guidance.to_dict()
-                    }
-                    all_extractions.append(extraction_record)
+            full_text = content_record.get('extracted_text', '')
+            if not full_text:
+                return (False, [], f"Empty text for {uid}")
+            
+            metadata = {
+                'source_url': candidate.get('source_url'),
+                'published_at': content_record.get('published_at'),
+                'fetched_at': content_record.get('fetched_at'),
+                'source_id': candidate.get('source_id')
+            }
+            
+            # Create a NEW extractor instance per thread to avoid race conditions
+            # This is safer than sharing one instance across threads
+            thread_extractor = LLMExtractor(
+                provider=args.provider,
+                model=args.model,
+                max_retries=args.max_retries
+            )
+            
+            if args.agentic:
+                guidance_items = thread_extractor.extract_with_agentic_review(full_text, metadata)
             else:
-                print(f"  [WARN] No guidance extracted")
-                
+                guidance_items = thread_extractor.extract_from_text(full_text, metadata)
+            
+            records = []
+            for guidance in guidance_items:
+                extraction_record = {
+                    'uid': uid,
+                    'source_id': metadata['source_id'],
+                    'source_url': metadata['source_url'],
+                    'title': title,
+                    'guidance': guidance.to_dict()
+                }
+                records.append(extraction_record)
+            
+            return (True, records, None)
+            
         except Exception as e:
-            print(f"  [ERROR] Extraction exception: {e}")
-            error_count += 1
-            continue
-    
+            return (False, [], str(e))
+
+    # Prepare candidate data with indices
+    candidate_data = [(i+1, cand, contents) for i, cand in enumerate(candidates)]
+
+    # Process with ThreadPool
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        # Map future to candidate info for progress tracking
+        futures = {executor.submit(process_candidate, data): data for data in candidate_data}
+        
+        for future in as_completed(futures):
+            # Retrieve original data to print progress
+            i, candidate, _ = futures[future]
+            uid = candidate['uid']
+            title = candidate.get('title', 'N/A')[:80]
+            
+            print(f"\n[{i}/{len(candidates)}] Completed: {title}")
+            
+            try:
+                success, records, error_msg = future.result()
+                
+                if success:
+                    success_count += 1
+                    all_extractions.extend(records)
+                    print(f"  ✓ Extracted {len(records)} items")
+                else:
+                    error_count += 1
+                    print(f"  ✗ {error_msg}")
+            except Exception as e:
+                error_count += 1
+                print(f"  ✗ Critical error in thread: {e}")
+        
     # Save results
     print()
     print("-" * 60)

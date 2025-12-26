@@ -36,7 +36,7 @@ import re
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-OUTPUT_PATH = "synthetic_guidance_output.jsonl"
+OUTPUT_PATH = Path("evaluation") / "ground_truth" / "synthetic_guidance_output.jsonl"
 # LLM imports (optional, only needed for --use-llm mode)
 LLM_AVAILABLE = False
 try:
@@ -1126,7 +1126,7 @@ Exhibit 99.1
             source_id=source_id,
             source_url=f"https://synthetic.sec.gov/Archives/edgar/data/{random.randint(100000, 999999)}/synthetic-8k.htm",
             title="8-K  - Current report",
-            full_text_snippet=full_text[:3000],  # Truncate to reasonable length
+            full_text_snippet=full_text,  # No truncation
             gold_standard_guidance=[asdict(item) for item in guidance_items],
             synthetic_metadata={
                 "company": company,
