@@ -31,8 +31,8 @@ UA = "AgenticFinanceResearchBot/0.1 (contact: aless13260@gmail.com)"
 MIN_CONTENT_LENGTH = 300  # Skip content shorter than this (likely image-only or empty)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-POINTERS_PATH = PROJECT_ROOT / "ingestion_json" / "pointers.json"
-OUT_PATH = PROJECT_ROOT / "ingestion_json" / "contents.jsonl"
+POINTERS_PATH = PROJECT_ROOT / "ingestion_json" / "pointers_8k.json"
+OUT_PATH = PROJECT_ROOT / "ingestion_json" / "contents_8k.jsonl"
 CACHE_PATH = PROJECT_ROOT / "ingestion_json" / "fetch_cache.json"
 
 
