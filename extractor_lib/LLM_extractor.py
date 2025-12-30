@@ -19,12 +19,21 @@ from typing import List, Dict, Any, Optional
 from uuid import uuid4
 import argparse
 from llama_index.core.program import LLMTextCompletionProgram
+from llama_index.core.tools import FunctionTool
+from llama_index.core.agent import ReActAgent
 from pydantic import BaseModel, Field
 from concurrent.futures import ThreadPoolExecutor, as_completed
 # Import your LLM setup and guidance schema
 sys.path.append(str(Path(__file__).parent.parent))
 from llm_setup import setup_llm
 from extractor_lib.guidance_schema import Guidance, GuidanceExtraction
+from extractor_lib.period_normalizer import (
+    normalize_period_tool,
+    get_fiscal_calendar_info,
+    quick_normalize,
+    create_period_normalization_agent,
+    normalize_with_agent
+)
 from ticker_map import load_ticker_map
 
 # Load company mapping once
@@ -83,11 +92,14 @@ class LLMExtractor:
             self.reasoning_model_name = "deepseek-reasoner" # Default to reasoning model for DeepSeek
         else:
             self.reasoning_model_name = self.model # Fallback to same model
-            
+
         print(f"[LLM] Reasoning Model: {self.reasoning_model_name}")
         self.reasoning_llm = setup_llm(provider=self.provider, model=self.reasoning_model_name, temperature=self.temperature)
-        
+
         self.max_retries = max_retries
+
+        # Create period normalization agent (lazy-loaded, only created if needed)
+        self._period_agent = None
 
         # System prompt for extraction
         # NOTE: the field names below match the Guidance pydantic model in
@@ -200,7 +212,7 @@ class LLMExtractor:
         - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
         - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
         - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
-        - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025", keep format consistent e.g. don't vary format to sometimes say full-year 2024, sometimes FY2024)  (or null)
+        - reporting_period: Extract the period as mentioned in the text, then use the normalize_period_tool to standardize it. (string or null)
         - current_value: Current/most-recent numeric value (number or null)
         - unit: MUST be one of: "million", "billion", "%" (or null)
         - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
@@ -210,9 +222,11 @@ class LLMExtractor:
         - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
         - rationales: Any qualitative explanations or reasons given for this guidance, keep it brief (string or null)
 
+        IMPORTANT: You have access to normalize_period_tool. When you extract a reporting period, call this tool to normalize it before including it in your output.
+
         With your current logic you are slightly too liberal in your classification of forward-looking statements:
         Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
-        
+
         Here is are some additional instructions to help you improve your extraction accuracy:
         Tax rate -> In -> Directly affects net income line
         Segment revenue -> In -> Subsumes to total revenue
@@ -220,12 +234,62 @@ class LLMExtractor:
         Bookings/backlog -> Out -> Leading indicator, not financial statement
         Same-store sales -> Out -> Operational KPI
         FX headwind -> In (if quantified) -> Impacts revenue/earnings directly
-        
+
         IF UNSURE OR AMBIGUOUS, THINK STEP BY STEP REFERING TO THE ABOVE JUSTIFICATIONS AND DECIDE CAREFULLY.
-        
+
         Do NOT extract historical results. Do NOT return past performance data.
         """
-    
+
+    @property
+    def period_agent(self):
+        """Lazy-load the period normalization agent."""
+        if self._period_agent is None:
+            print("  [AGENT] Creating period normalization agent...")
+            self._period_agent = create_period_normalization_agent(self.llm)
+        return self._period_agent
+
+    def _normalize_period_3stage(
+        self,
+        raw_period: str,
+        company: str = "",
+        published_at: str = "",
+        statement_text: str = ""
+    ) -> str:
+        """
+        3-stage period normalization:
+        1. Quick regex normalization (fast, handles 80% of cases)
+        2. If that fails, use ReActAgent with tools (handles complex/ambiguous cases)
+        3. If agent fails, return original
+
+        Args:
+            raw_period: Raw period string from extraction
+            company: Company name for fiscal calendar lookup
+            published_at: Document publish date
+            statement_text: Context text
+
+        Returns:
+            Normalized period string
+        """
+        if not raw_period:
+            return raw_period
+
+        # Stage 1: Quick normalize
+        quick_result = quick_normalize(raw_period)
+        if quick_result:
+            return quick_result
+
+        # Stage 2: Agent-based normalization for complex cases
+        print(f"  [AGENT] Using agent for complex period: '{raw_period}'")
+        agent_result = normalize_with_agent(
+            self.period_agent,
+            raw_period,
+            company,
+            published_at,
+            statement_text
+        )
+
+        return agent_result
+
     def _attach_metadata(self, item: Guidance, metadata: Optional[Dict[str, Any]]) -> None:
         """Attach metadata to a Guidance item."""
         if not metadata:
@@ -621,6 +685,16 @@ class LLMExtractor:
                 parsed.guid = uuid4().hex
                 self._attach_metadata(parsed, metadata)
                 parsed.extraction_method = "reasoning"
+
+                # Post-process: 3-stage period normalization
+                if parsed.reporting_period:
+                    normalized = self._normalize_period_3stage(
+                        raw_period=parsed.reporting_period,
+                        company=parsed.company or "",
+                        published_at=metadata.get('published_at', '') if metadata else "",
+                        statement_text=parsed.statement_text or ""
+                    )
+                    parsed.reporting_period = normalized
 
                 # Improve statement_text by finding it in the full document
                 st = parsed.statement_text or ""
