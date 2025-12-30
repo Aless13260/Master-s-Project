@@ -79,17 +79,18 @@ def main():
                 else:
                     guidance_items = extractor.extract_from_text(text)
                 
+                # Collect all items for this document
+                guidance_list = []
                 for item in guidance_items:
-                    # Convert Pydantic model to dict
-                    item_dict = item.model_dump()
-                    
-                    # Write to output in the format expected by evaluation script
-                    output_record = {
-                        "uid": uid,
-                        "guidance": item_dict
-                    }
-                    out_f.write(json.dumps(output_record, ensure_ascii=False) + "\n")
-                    out_f.flush()
+                    guidance_list.append(item.model_dump())
+                
+                # Write one record per document
+                output_record = {
+                    "uid": uid,
+                    "guidance": guidance_list
+                }
+                out_f.write(json.dumps(output_record, ensure_ascii=False) + "\n")
+                out_f.flush()
                     
             except Exception as e:
                 print(f"  Error processing {uid}: {e}")

@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Import your LLM setup and guidance schema
 sys.path.append(str(Path(__file__).parent.parent))
 from llm_setup import setup_llm
-from extractor_lib.guidance_schema import Guidance
+from extractor_lib.guidance_schema import Guidance, GuidanceExtraction
 from ticker_map import load_ticker_map
 
 # Load company mapping once
@@ -41,11 +41,6 @@ GUIDANCE_KEYWORDS = [
     r'\b(expect|expects|expected|expecting|anticipat\w*|forecast\w*|project\w*|guidance)\b',
     r'\b(outlook|target\w*|goal\w*|aim\w*)\b',
 ]
-
-
-
-# Use the existing Guidance schema for extraction
-GuidanceExtraction = Guidance
 
 
 class MultiGuidanceExtraction(BaseModel):
@@ -137,7 +132,6 @@ class LLMExtractor:
         impact financial performance (e.g., AOV for marketplaces, subscriber growth for SaaS). Purely qualitative commentary without clear financial linkage is excluded.
 
         For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
-        - company: Company name (string or null)
         - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
         - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
         - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
@@ -151,42 +145,111 @@ class LLMExtractor:
         - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
         - rationales: Any qualitative explanations or reasons given for this guidance, keep it brief (string or null)
 
+        With your current logic you are slightly too liberal in your classification of forward-looking statements:
+        Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
+        
         Do NOT extract historical results. Do NOT return past performance data.
         """
 
-        self.refinement_prompt = """
-        You are a Senior Financial Analyst & Risk Manager.
+        self.system2prompt = """
+        You are a financial analyst specialized in extracting forward-looking financial guidance from corporate filings, earnings releases, and press statements.
+
+        CRITICAL: Only extract FORWARD-LOOKING guidance. DO NOT extract historical results or past performance.
+
+        EXAMPLES OF FORWARD-LOOKING (extract these):
+        ✓ "expects revenue to be $50-52 billion for Q2"
+        ✓ "guidance for full year EPS of $5.00 to $5.50"
+        ✓ "anticipates operating margin of approximately 30%"
+        ✓ "targeting 10% growth in FY2026"
+
+        HANDLING MULTIPLE ITEMS (CRITICAL):
+        If a single sentence contains multiple metrics (e.g., "Revenue of $10B and EPS of $2.00"), you MUST create separate JSON objects for each metric.
+        - Object 1: Revenue, $10B
+        - Object 2: EPS, $2.00
+        Do NOT combine them. Do NOT skip items. Extract EVERY distinct forward-looking metric found.
+
+        EXAMPLES OF HISTORICAL (DO NOT extract these):
+        ✗ "revenue was $281.7 billion and increased 15%"
+        ✗ "net income was $101.8 billion"
+        ✗ "reported earnings of $13.64 per share"
+        ✗ "operating income increased 17%"
+        ✗ "fiscal year ended June 30, 2025 results"
+
+        EXAMPLES OF OPERATIONAL/NON-FINANCIAL (DO NOT extract these):
+        ✗ "plans to reduce team size by 10,000" (Headcount/HR)
+        ✗ "expects to close 5,000 open roles" (Headcount/HR)
+        ✗ "aims to complete efficiency analysis by summer" (Strategic milestone without financial value)
+        ✗ "targeting developer productivity enhancements" (Operational goal)
+        ✗ "launching new product in Q3" (Product launch without revenue guidance)
+
+        Look for forward-looking verbs: expects, guidance, outlook, forecast, projects, anticipates, targets, will be, plans to
+        REJECT past-tense verbs: was, were, reported, announced, increased, decreased, grew, ended, posted
+        REJECT operational metrics: headcount, employees, roles, team size, users, subscribers (unless explicitly revenue-related)
+
+        You will extract guidance on financial statement items (revenue, earnings, etc.) and key operational metrics that directly
+        impact financial performance (e.g., AOV for marketplaces, subscriber growth for SaaS). Purely qualitative commentary without clear financial linkage is excluded.
+
+        For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
+        - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
+        - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
+        - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
+        - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025", keep format consistent e.g. don't vary format to sometimes say full-year 2024, sometimes FY2024)  (or null)
+        - current_value: Current/most-recent numeric value (number or null)
+        - unit: MUST be one of: "million", "billion", "%" (or null)
+        - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
+        - guided_range_high: The high end of the range (if range). Leave null if single number. (number or null)
+        - is_revision: true/false indicating if this is a revision to prior guidance, e.g. updated from our prior outlook of $94-99 billion would yield true (boolean)
+        - revision_direction: "increased", "decreased" or null, compared to previous guidance ONLY (string or null)
+        - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
+        - rationales: Any qualitative explanations or reasons given for this guidance, keep it brief (string or null)
+
+        With your current logic you are slightly too liberal in your classification of forward-looking statements:
+        Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
+        IF UNSURE OR AMBIGUOUS, THINK STEP BY STEP AND DECIDE CAREFULLY.
         
-        Your task is NOT just to verify the numbers, but to ENRICH the extracted guidance with qualitative analysis.
-        
-        IMPORTANT: Keep your internal reasoning CONCISE and FOCUSED. Do not over-analyze unrelated details.
-        
-        INPUT:
-        1. Source Text (Earnings release/filing)
-        2. Extracted Guidance Items (Raw numbers)
-        
-        YOUR JOB:
-        For EACH guidance item, analyze the surrounding context and determine:
-        1. SENTIMENT: Is this guidance Positive (Bullish), Negative (Bearish), or Neutral?
-           - "Positive": Raising guidance, beating estimates, strong growth.
-           - "Negative": Lowering guidance, missing estimates, headwinds.
-           - "Cautious": "Uncertainty", "conservative approach", "macro headwinds".
-           - "Optimistic": "Strong momentum", "tailwinds", "record demand".
-        
-        2. SCORE: Assign a sentiment score from 0.0 (Disaster) to 1.0 (Euphoric). 0.5 is Neutral.
-        
-        3. RISK FACTORS: Identify specific risks mentioned as reasons for this guidance (e.g., "FX headwinds", "Supply Chain", "Inflation", "China demand").
-        
-        4. VERIFICATION: Briefly check if the numbers match the text. If they are wrong, correct them.
-        
-        OUTPUT:
-        Return the list of guidance items with these new fields populated:
-        - 'sentiment_label': One of ["positive", "negative", "neutral", "cautious", "optimistic"]
-        - 'sentiment_score': Float between 0.0 and 1.0
-        - 'risk_factors': String listing key risks (e.g. "Currency, Inflation")
-        - 'agentic_review_comment': Your CONCISE analysis summary (e.g. "Raised outlook due to strong AI demand, despite FX headwinds.")
+        Do NOT extract historical results. Do NOT return past performance data.
         """
     
+    def _attach_metadata(self, item: Guidance, metadata: Optional[Dict[str, Any]]) -> None:
+        """Attach metadata to a Guidance item."""
+        if not metadata:
+            return
+
+        if metadata.get("source_url"):
+            item.source_url = metadata.get("source_url")
+        
+        # Set dates
+        if metadata.get("published_at"):
+            item.published_at = metadata.get("published_at")
+        if metadata.get("fetched_at"):
+            item.ingested_at = metadata.get("fetched_at")
+        
+        # Set extraction time (now)
+        item.extracted_at = datetime.now(timezone.utc).isoformat()
+
+        if metadata.get("source_id"):
+            sid = str(metadata.get("source_id")).lower()
+            
+            # 1. Auto-fill Company Name from Source ID
+            if not item.company and metadata.get("source_id") in COMPANY_MAP:
+                item.company = COMPANY_MAP[metadata.get("source_id")]
+            
+            # 2. Map source_type
+            if "8-k" in sid or "8k" in sid:
+                item.source_type = "8-K"
+            elif "10-k" in sid or "10k" in sid:
+                item.source_type = "10-K"
+            elif "10-q" in sid or "10q" in sid:
+                item.source_type = "10-Q"
+            elif "press" in sid or "release" in sid:
+                item.source_type = "press_release"
+            elif "call" in sid or "transcript" in sid:
+                item.source_type = "earnings_call"
+            elif "presentation" in sid:
+                item.source_type = "investor_presentation"
+            else:
+                item.source_type = "other"
+
     def _extract_relevant_sections(self, text: str, context_chars: int = 500) -> str:
         """
         Smart extraction: Find text sections containing guidance keywords.
@@ -318,55 +381,24 @@ class LLMExtractor:
 
         try:
             # The program was configured to output MultiGuidanceExtraction where
-            # each item is (or can be parsed into) the Guidance pydantic model.
+            # each item is (or can be parsed into) the GuidanceExtraction pydantic model.
             guidance_items: List[Guidance] = []
             for item in result.guidance_items:
-                # item may already be a Guidance instance or a dict-like object
-                if isinstance(item, Guidance):
-                    parsed = item
-                else:
-                    # Parse into Guidance model to ensure types/validation
+                # item is GuidanceExtraction (from LLM)
+                if isinstance(item, GuidanceExtraction):
+                    # Convert to Guidance (full model)
+                    parsed = Guidance(**item.model_dump())
+                elif isinstance(item, dict):
                     parsed = Guidance.parse_obj(item)
+                else:
+                    # Fallback
+                    parsed = Guidance(**item.dict())
 
                 # Force a fresh unique ID because LLM often hallucinates generic IDs like "guid_1"
                 parsed.guid = uuid4().hex
 
-                # Attach some metadata if provided
-                if metadata:
-                    if metadata.get("source_url"):
-                        parsed.source_url = metadata.get("source_url")
-                    
-                    # Set dates
-                    if metadata.get("published_at"):
-                        parsed.published_at = metadata.get("published_at")
-                    if metadata.get("fetched_at"):
-                        parsed.ingested_at = metadata.get("fetched_at")
-                    
-                    # Set extraction time (now)
-                    parsed.extracted_at = datetime.now(timezone.utc).isoformat()
-
-                    if metadata.get("source_id"):
-                        sid = str(metadata.get("source_id")).lower()
-                        
-                        # 1. Auto-fill Company Name from Source ID
-                        if not parsed.company and metadata.get("source_id") in COMPANY_MAP:
-                            parsed.company = COMPANY_MAP[metadata.get("source_id")]
-                        
-                        # 2. Map source_type
-                        if "8-k" in sid or "8k" in sid:
-                            parsed.source_type = "8-K"
-                        elif "10-k" in sid or "10k" in sid:
-                            parsed.source_type = "10-K"
-                        elif "10-q" in sid or "10q" in sid:
-                            parsed.source_type = "10-Q"
-                        elif "press" in sid or "release" in sid:
-                            parsed.source_type = "press_release"
-                        elif "call" in sid or "transcript" in sid:
-                            parsed.source_type = "earnings_call"
-                        elif "presentation" in sid:
-                            parsed.source_type = "investor_presentation"
-                        else:
-                            parsed.source_type = "other"
+                # Attach metadata
+                self._attach_metadata(parsed, metadata)
 
                 # Improve statement_text by finding it in the full document and
                 # expanding the snippet so we show more preceding context.
@@ -537,88 +569,102 @@ class LLMExtractor:
         if len(focused_text) > 16000:
             focused_text = focused_text[:16000] + "\n... [truncated]"
 
-        try:
-            # Create the review program
-            # We reuse MultiGuidanceExtraction as the output format
-            # Use self.agentic_llm (Reasoning model) for this step
-            program = LLMTextCompletionProgram.from_defaults(
-                output_cls=MultiGuidanceExtraction,
-                prompt_template_str=self.refinement_prompt + "\n\nSOURCE TEXT:\n{text}\n\nPREVIOUSLY EXTRACTED ITEMS:\n{current_extraction}\n\nCORRECTED ITEMS:",
-                llm=self.agentic_llm,
-                verbose=False
-            )
-            
-            # Run the review
-            result = program(text=focused_text, current_extraction=current_extraction_json)
-            
-            # Parse results
-            refined_items: List[Guidance] = []
-            
-            # Get review metadata
-            summary = getattr(result, 'review_summary', "No summary provided")
-            changed = getattr(result, 'changes_made', False)
-            
-            if changed:
-                print(f"  [AGENT] Reviewer Summary: {summary}")
-            
-            for item in result.guidance_items:
-                # item may already be a Guidance instance or a dict-like object
-                if isinstance(item, Guidance):
-                    parsed = item
+        # Retry loop for Agentic Review
+        for attempt in range(self.max_retries):
+            try:
+                # Create the review program
+                # We reuse MultiGuidanceExtraction as the output format
+                # Use self.agentic_llm (Reasoning model) for this step
+                program = LLMTextCompletionProgram.from_defaults(
+                    output_cls=MultiGuidanceExtraction,
+                    prompt_template_str=self.refinement_prompt + "\n\nSOURCE TEXT:\n{text}\n\nPREVIOUSLY EXTRACTED ITEMS:\n{current_extraction}\n\nCORRECTED ITEMS:",
+                    llm=self.agentic_llm,
+                    verbose=False
+                )
+                
+                # Run the review
+                result = program(text=focused_text, current_extraction=current_extraction_json)
+                
+                # Parse results
+                refined_items: List[Guidance] = []
+                
+                # Get review metadata
+                summary = getattr(result, 'review_summary', "No summary provided")
+                changed = getattr(result, 'changes_made', False)
+                
+                if changed:
+                    print(f"  [AGENT] Reviewer Summary: {summary}")
+                
+                for item in result.guidance_items:
+                    # item is GuidanceExtraction (from LLM)
+                    if isinstance(item, GuidanceExtraction):
+                        # Convert to Guidance (full model)
+                        parsed = Guidance(**item.model_dump())
+                    elif isinstance(item, dict):
+                        parsed = Guidance.parse_obj(item)
+                    else:
+                        parsed = Guidance(**item.dict())
+                    
+                    # Force a fresh unique ID for the refined item
+                    parsed.guid = uuid4().hex
+
+                    # Attach metadata (CRITICAL: Re-attach metadata lost during round-trip)
+                    self._attach_metadata(parsed, metadata)
+
+                    # Tag this item as coming from the agentic review process
+                    parsed.extraction_method = "agentic_review"
+                    
+                    # Use the item-specific comment if the LLM provided it (as requested in prompt)
+                    # Fallback to global summary only if missing
+                    if not parsed.agentic_review_comment:
+                        parsed.agentic_review_comment = summary
+                    
+                    # Ensure sentiment fields are populated (if LLM missed them, set defaults)
+                    if not parsed.sentiment_label:
+                        parsed.sentiment_label = "neutral"
+                    if parsed.sentiment_score is None:
+                        parsed.sentiment_score = 0.5
+                    
+                    # Use item-specific flag if provided, otherwise fallback to global change flag
+                    if parsed.was_updated_by_agent is None:
+                        parsed.was_updated_by_agent = changed
+                    
+                    refined_items.append(parsed)
+                
+                # Compare counts to see if the agent made changes
+                if len(refined_items) != len(initial_items):
+                    print(f"  [AGENT] Refinement changed item count: {len(initial_items)} -> {len(refined_items)}")
                 else:
-                    parsed = Guidance.parse_obj(item)
+                    print("  [AGENT] Refinement kept item count same (content may have changed).")
                 
-                # Force a fresh unique ID for the refined item
-                parsed.guid = uuid4().hex
+                # Update duration to reflect TOTAL time (Stage 1 + Stage 2)
+                total_duration = time.time() - total_start_time
+                
+                # Amortize duration across refined items
+                if refined_items:
+                    amortized_duration = total_duration / len(refined_items)
+                    for item in refined_items:
+                        item.processing_duration_seconds = amortized_duration
 
-                # Tag this item as coming from the agentic review process
-                parsed.extraction_method = "agentic_review"
+                return refined_items
                 
-                # Use the item-specific comment if the LLM provided it (as requested in prompt)
-                # Fallback to global summary only if missing
-                if not parsed.agentic_review_comment:
-                    parsed.agentic_review_comment = summary
-                
-                # Ensure sentiment fields are populated (if LLM missed them, set defaults)
-                if not parsed.sentiment_label:
-                    parsed.sentiment_label = "neutral"
-                if parsed.sentiment_score is None:
-                    parsed.sentiment_score = 0.5
-                
-                # Use item-specific flag if provided, otherwise fallback to global change flag
-                if parsed.was_updated_by_agent is None:
-                    parsed.was_updated_by_agent = changed
-                
-                refined_items.append(parsed)
-            
-            # Compare counts to see if the agent made changes
-            if len(refined_items) != len(initial_items):
-                print(f"  [AGENT] Refinement changed item count: {len(initial_items)} -> {len(refined_items)}")
-            else:
-                print("  [AGENT] Refinement kept item count same (content may have changed).")
-            
-            # Update duration to reflect TOTAL time (Stage 1 + Stage 2)
-            total_duration = time.time() - total_start_time
-            
-            # Amortize duration across refined items
-            if refined_items:
-                amortized_duration = total_duration / len(refined_items)
-                for item in refined_items:
-                    item.processing_duration_seconds = amortized_duration
-
-            return refined_items
-            
-        except Exception as e:
-            print(f"  [AGENT] Refinement failed: {e}. Returning initial extraction.")
-            # Update duration to reflect the time spent failing
-            total_duration = time.time() - total_start_time
-            
-            # Amortize duration across initial items (fallback)
-            if initial_items:
-                amortized_duration = total_duration / len(initial_items)
-                for item in initial_items:
-                    item.processing_duration_seconds = amortized_duration
-            return initial_items
+            except Exception as e:
+                print(f"  [AGENT] Refinement attempt {attempt + 1}/{self.max_retries} failed: {e}")
+                if attempt < self.max_retries - 1:
+                    wait_time = 2 ** attempt
+                    print(f"  [AGENT] Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    print("  [AGENT] All refinement attempts failed. Returning initial extraction.")
+                    # Update duration to reflect the time spent failing
+                    total_duration = time.time() - total_start_time
+                    
+                    # Amortize duration across initial items (fallback)
+                    if initial_items:
+                        amortized_duration = total_duration / len(initial_items)
+                        for item in initial_items:
+                            item.processing_duration_seconds = amortized_duration
+                    return initial_items
 
 
 def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None, randomize: bool = False) -> List[Dict[str, Any]]:

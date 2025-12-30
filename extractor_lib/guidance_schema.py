@@ -5,16 +5,9 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_validator
 
 
-class Guidance(BaseModel):
-    """Pydantic model for a guidance item. Mirrors the previous dataclass fields.
-
-    This model is used as the structured output type for LLM extraction and is
-    intentionally compatible with the old dataclass-based shape.
-    """
-    guid: str = Field(default_factory=lambda: uuid4().hex)
-    company: Optional[str] = None
-    # NOTE: ticker removed to reduce complexity; can be added later via mapping
-
+class GuidanceExtraction(BaseModel):
+    """Schema for LLM extraction (excludes metadata like company)."""
+    
     # What guidance is about - constrained to valid categories
     guidance_type: Optional[Literal[
         "revenue",
@@ -46,9 +39,21 @@ class Guidance(BaseModel):
     revision_direction: Optional[Literal["increased", "decreased"]] = None
     qualitative_direction: Optional[str] = None
     rationales: Optional[str] = None
+    
+    # Extracted text snippet
+    statement_text: Optional[str] = None
+
+
+class Guidance(GuidanceExtraction):
+    """Full guidance model including metadata. Mirrors the previous dataclass fields.
+
+    This model is used for storage and analysis.
+    """
+    guid: str = Field(default_factory=lambda: uuid4().hex)
+    company: Optional[str] = None
+    # NOTE: ticker removed to reduce complexity; can be added later via mapping
 
     # Metadata
-    statement_text: Optional[str] = None
     source_url: Optional[str] = None
     source_type: Optional[Literal["8-K", "10-K", "10-Q", "press_release", "earnings_call", "investor_presentation", "other"]] = None
     
