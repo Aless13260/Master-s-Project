@@ -1,12 +1,19 @@
 """
-Period normalization tool for LLM-based guidance extraction.
+Period normalization for LLM-based guidance extraction.
 
-Provides a function-calling tool that reasoning models can use to normalize
-reporting periods into consistent formats.
+Two-stage normalization:
+1. quick_normalize() - Fast regex for 80%+ of cases
+2. ReActAgent - For complex/ambiguous periods requiring reasoning
+
+Standard formats:
+- Fiscal Year: "FY2025"
+- Fiscal Quarter: "Q1 FY2025" 
+- Half-Year: "H1 FY2025"
+- Multi-Year: "FY2021-FY2024"
 """
 
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import json
 import re
@@ -17,7 +24,6 @@ from llama_index.core.agent import ReActAgent
 # Load fiscal calendar mappings
 FISCAL_CALENDARS_PATH = Path(__file__).parent / "fiscal_calendars.json"
 
-
 def load_fiscal_calendars() -> Dict[str, Dict[str, Any]]:
     """Load company fiscal year end dates."""
     if FISCAL_CALENDARS_PATH.exists():
@@ -25,126 +31,56 @@ def load_fiscal_calendars() -> Dict[str, Dict[str, Any]]:
             return json.load(f)
     return {}
 
-
 FISCAL_CALENDARS = load_fiscal_calendars()
 
 
-def normalize_period_tool(
+def get_fiscal_calendar_info(company: str) -> Optional[Dict[str, Any]]:
+    """Get fiscal calendar information for a company."""
+    return FISCAL_CALENDARS.get(company)
+
+
+def normalize_period(
     raw_period: str,
     company: str = "",
     published_at: str = "",
-    statement_text: str = ""
+    statement_text: str = "",
+    agent: Optional[ReActAgent] = None
 ) -> str:
     """
-    Normalize a reporting period string to standardized format.
-
-    This tool is designed to be called by an LLM agent during extraction.
-    The LLM should use its reasoning capabilities along with the metadata
-    provided to make intelligent normalization decisions.
-
-    STANDARDIZATION RULES:
-
-    1. FISCAL YEAR FORMAT:
-       - Use: "FY2025", "FY2024", etc.
-       - NOT: "FY 2025", "Fiscal Year 2025", "fiscal 2025"
-
-    2. FISCAL QUARTER FORMAT:
-       - Use: "Q1 FY2025", "Q2 FY2024", etc. (with space)
-       - NOT: "Q1FY2025", "FY25 Q1", "First Quarter 2025"
-
-    3. CALENDAR YEAR:
-       - Use: "2025", "2024" (only when explicitly calendar-based)
-       - Most guidance refers to FISCAL years, not calendar
-
-    4. IMPLICIT FISCAL YEAR RULE (CRITICAL):
-       - "Q1 2025", "Q2 2024" etc. ALWAYS means fiscal quarter
-       - Convert to: "Q1 FY2025", "Q2 FY2024"
-       - This is standard corporate guidance convention
-
-    5. HALF-YEAR:
-       - Use: "H1 FY2025", "H2 FY2024"
-       - "first half 2025" → "H1 FY2025"
-       - "second half of the year" → infer year from context
-
-    6. MULTI-YEAR:
-       - Use: "FY2021-FY2024" (with hyphen)
-       - "2021-2024" → "FY2021-FY2024"
-
-    7. VAGUE TERMS:
-       - "next 12 months" → Calculate from published_at, convert to FY range
-       - "later this year" → Infer FY from published_at
-       - "near term" → "NEAR_TERM" (keep as tag)
-       - "multi-year horizon" → "MULTI_YEAR"
-
-    8. SPECIFIC MONTHS:
-       - "June 2020" → "FY2020" (if June is FY end) or "June 2020" (keep as is)
-       - "November 2021 and November 2022" → "FY2022-FY2023" (infer FY)
-
-    9. NULL/MISSING:
-       - If truly ambiguous or missing → return null
-       - Only use null as last resort
-
-    COMPANY FISCAL CALENDARS:
-    Use the fiscal_calendar metadata when available to resolve ambiguities.
-    Common patterns:
-    - Microsoft: FY ends June 30
-    - Tesla: FY = Calendar year (Dec 31)
-    - NVIDIA: FY ends January (last Sunday)
-    - Apple: FY ends September
-
-    INFERENCE FROM PUBLISH DATE:
-    - If guidance says "Q1" with no year, look at publish_at
-    - If published in Aug 2024, "Q1" likely means next Q1 (FY2025 Q1)
-    - Use common sense: guidance is forward-looking
-
-    REASONING PROCESS:
-    1. Check if period is already in standard format → return as-is
-    2. Check for simple patterns (FY2025, Q1 2025) → normalize directly
-    3. For vague terms, use published_at and company context
-    4. For ambiguous cases, use statement_text for additional clues
-    5. Return normalized period with confidence and reasoning
-
+    Two-stage period normalization (main entry point).
+    
+    1. Try fast regex normalization (handles 80%+ of cases)
+    2. Fall back to agent-based reasoning for complex cases OR missing periods
+    
     Args:
-        raw_period: The raw period string from extraction
-        company: Company name (for fiscal calendar lookup)
+        raw_period: Raw period string from extraction (can be None/empty)
+        company: Company name for fiscal calendar lookup
         published_at: Document publish date (ISO format)
-        statement_text: Surrounding text for context clues
-
+        statement_text: Context text for ambiguous cases
+        agent: Optional pre-created ReActAgent (if None, skips agent stage)
+        
     Returns:
-        dict with:
-            - normalized_period: Standardized period string
-            - confidence: "high", "medium", "low"
-            - reasoning: Explanation of normalization decision
-            - period_start: ISO date string (optional, for debugging)
-            - period_end: ISO date string (optional, for debugging)
+        Normalized period string
     """
-
-    # First try quick normalization
-    quick_result = quick_normalize(raw_period)
-    if quick_result:
-        return quick_result
-
-    # If quick normalization fails, return the raw period with context hint
-    # The LLM reasoning model will apply the rules from the docstring
+    # Stage 1: Fast regex normalization (only if we have a period string)
+    if raw_period:
+        result = quick_normalize(raw_period)
+        if result:
+            return result
+    
+    # Stage 2: Agent-based reasoning (if agent provided)
+    # Triggers if regex failed OR if raw_period was missing
+    if agent:
+        return normalize_with_agent(agent, raw_period, company, published_at, statement_text)
+    
+    # No agent available, return original
     return raw_period
-
-
-def get_fiscal_calendar_info(company: str) -> Optional[Dict[str, Any]]:
-    """
-    Get fiscal calendar information for a company.
-
-    Returns:
-        dict with fy_end_month, fy_end_day, or None if not found
-    """
-    return FISCAL_CALENDARS.get(company)
 
 
 def create_period_normalization_agent(llm) -> ReActAgent:
     """
-    Create a ReActAgent specialized for normalizing complex period strings.
-
-    This agent has access to tools and can reason about ambiguous cases.
-    Use this only for periods that quick_normalize() couldn't handle.
+    Create a ReActAgent for normalizing complex period strings that 
+    quick_normalize() couldn't handle.
 
     Args:
         llm: The LLM instance to use for the agent
@@ -153,114 +89,103 @@ def create_period_normalization_agent(llm) -> ReActAgent:
         ReActAgent configured with period normalization tools
     """
 
-    # Tool 1: Fiscal calendar lookup
     def lookup_fiscal_calendar(company: str) -> str:
         """
-        Look up the fiscal year end month for a company.
-
+        Look up the fiscal year end for a company.
+        
         Args:
             company: Company name or ticker symbol
-
+            
         Returns:
-            String describing the fiscal year end (e.g., "June 30" or "Calendar year (Dec 31)")
+            Fiscal year end info or default assumption
         """
         info = get_fiscal_calendar_info(company)
         if info:
-            notes = info.get('notes', '')
-            return f"{company}: {notes}"
-        return f"{company}: Fiscal calendar not found. Assume calendar year (December 31)."
+            return f"{company}: FY ends {info.get('notes', 'Unknown')}"
+        return f"{company}: No fiscal calendar found. Assuming calendar year (Dec 31)."
 
-    # Tool 2: Infer fiscal year from date
-    def infer_fiscal_year_from_date(company: str, date_str: str) -> str:
+    def infer_fiscal_year(company: str, date_str: str) -> str:
         """
-        Infer which fiscal year a given date falls into for a company.
-
+        Determine which fiscal year a date falls into.
+        
         Args:
-            company: Company name
+            company: Company name for fiscal calendar lookup
             date_str: ISO date string (e.g., "2024-08-21")
-
+            
         Returns:
-            String like "FY2025" indicating the fiscal year
+            Fiscal year like "FY2025"
         """
         try:
             date = datetime.fromisoformat(date_str.replace('Z', '+00:00').split('T')[0])
             info = get_fiscal_calendar_info(company)
-
-            if not info:
-                # Default to calendar year
-                return f"FY{date.year}"
-
-            fy_end_month = info.get('fy_end_month', 12)
-
+            fy_end_month = info.get('fy_end_month', 12) if info else 12
+            
             # If date is after FY end month, it's in the next FY
             if date.month > fy_end_month:
                 return f"FY{date.year + 1}"
-            else:
-                return f"FY{date.year}"
-        except:
+            return f"FY{date.year}"
+        except Exception:
             return "Unable to parse date"
 
-    # Tool 3: Quick normalize (wrapped)
-    def try_quick_normalize(period: str) -> str:
+    def get_current_fiscal_context(company: str, published_at: str) -> str:
         """
-        Try regex-based normalization for common period formats.
-
+        Get full fiscal context for period inference.
+        
         Args:
-            period: Raw period string
-
+            company: Company name
+            published_at: Document publication date
+            
         Returns:
-            Normalized period or original string if no pattern matched
+            Context string with current FY and quarter info
         """
-        result = quick_normalize(period)
-        return result if result else f"No quick normalization pattern matched for: {period}"
+        try:
+            date = datetime.fromisoformat(published_at.replace('Z', '+00:00').split('T')[0])
+            info = get_fiscal_calendar_info(company)
+            fy_end_month = info.get('fy_end_month', 12) if info else 12
+            
+            # Calculate current FY
+            if date.month > fy_end_month:
+                current_fy = date.year + 1
+            else:
+                current_fy = date.year
+            
+            # Estimate current quarter (simplified)
+            month_in_fy = (date.month - fy_end_month - 1) % 12 + 1
+            current_q = (month_in_fy - 1) // 3 + 1
+            
+            return f"As of {published_at}: Currently in Q{current_q} FY{current_fy}"
+        except Exception:
+            return "Unable to determine fiscal context"
 
-    # Create FunctionTool instances
     tools = [
         FunctionTool.from_defaults(fn=lookup_fiscal_calendar),
-        FunctionTool.from_defaults(fn=infer_fiscal_year_from_date),
-        FunctionTool.from_defaults(fn=try_quick_normalize),
+        FunctionTool.from_defaults(fn=infer_fiscal_year),
+        FunctionTool.from_defaults(fn=get_current_fiscal_context),
     ]
 
-    # System prompt for the agent
-    system_prompt = """
-You are a financial reporting period normalization specialist.
+    system_prompt = """You are a financial reporting period normalization specialist.
 
-Your job is to normalize reporting periods from corporate guidance to standard formats.
+STANDARD FORMATS (use exactly):
+- Fiscal Year: "FY2025" (not "FY 2025" or "Fiscal Year 2025")
+- Fiscal Quarter: "Q1 FY2025" (with single space)
+- Half-Year: "H1 FY2025" or "H2 FY2025"
+- Multi-Year: "FY2021-FY2024" (hyphen, no spaces)
 
-STANDARD FORMATS:
-1. Fiscal Year: "FY2025", "FY2024" (NOT "FY 2025" or "Fiscal Year 2025")
-2. Fiscal Quarter: "Q1 FY2025", "Q2 FY2024" (with space)
-3. Half-Year: "H1 FY2025", "H2 FY2024"
-4. Multi-Year: "FY2021-FY2024"
+KEY RULES:
+- "Q1 2025" ALWAYS means fiscal → "Q1 FY2025"
+- Vague terms ("next year", "this quarter") require date inference
+- Use lookup_fiscal_calendar for company-specific FY ends
+- Use get_current_fiscal_context when year is ambiguous
 
-CRITICAL RULES:
-- "Q1 2025", "Q2 2024" etc. ALWAYS means fiscal quarters → "Q1 FY2025", "Q2 FY2024"
-- Use tools to look up fiscal calendars and infer dates when needed
-- For vague terms like "next 12 months", use the publish date to infer the FY
-- Return ONLY the normalized period string, nothing else
+OUTPUT: Return ONLY the normalized period string, nothing else."""
 
-You have access to tools to help you:
-- lookup_fiscal_calendar: Get a company's fiscal year end
-- infer_fiscal_year_from_date: Calculate which FY a date falls into
-- try_quick_normalize: Try regex-based normalization first
-
-Process:
-1. Try quick_normalize first (already done before you're called)
-2. Use tools to gather context (fiscal calendar, date inference)
-3. Apply normalization rules
-4. Return the normalized period string ONLY
-"""
-
-    # Create the agent
-    agent = ReActAgent.from_tools(
+    return ReActAgent.from_tools(
         tools=tools,
         llm=llm,
         verbose=False,
-        max_iterations=5,
+        max_iterations=4,
         system_prompt=system_prompt
     )
-
-    return agent
 
 
 def normalize_with_agent(
@@ -271,127 +196,189 @@ def normalize_with_agent(
     statement_text: str = ""
 ) -> str:
     """
-    Use the ReActAgent to normalize a complex period that quick_normalize couldn't handle.
+    Use the ReActAgent to normalize a complex period.
+    Called only when quick_normalize() returns None or when raw_period is missing.
 
     Args:
         agent: The ReActAgent instance
         raw_period: The raw period string
-        company: Company name
+        company: Company name for fiscal calendar lookup
         published_at: ISO date string of document publication
         statement_text: Context text snippet
 
     Returns:
-        Normalized period string
+        Normalized period string, or original if normalization fails
     """
-
-    # Build context for the agent
-    context_parts = [f"Raw period: '{raw_period}'"]
+    # Build concise context for the agent
+    if raw_period:
+        context_parts = [f"Period: '{raw_period}'"]
+    else:
+        context_parts = ["Period: MISSING (Please infer from context/date)"]
+        
     if company:
         context_parts.append(f"Company: {company}")
     if published_at:
         context_parts.append(f"Published: {published_at}")
     if statement_text:
-        snippet = statement_text[:200] if len(statement_text) > 200 else statement_text
-        context_parts.append(f"Context: {snippet}")
+        context_parts.append(f"Context: {statement_text[:150]}")
 
-    context = "\n".join(context_parts)
+    prompt = f"""Normalize to standard format (or infer if missing):
+{chr(10).join(context_parts)}
 
-    prompt = f"""
-Normalize this reporting period to standard format:
-
-{context}
-
-Use your tools if needed. Return ONLY the normalized period (e.g., "Q1 FY2025" or "FY2024").
-"""
+Return ONLY the normalized period (e.g., "Q1 FY2025", "FY2024", "H1 FY2025")."""
 
     try:
         response = agent.chat(prompt)
         normalized = str(response).strip()
 
-        # Clean up any extra text the agent might have added
-        # Extract just the period format (FY2025, Q1 FY2025, etc.)
-        import re
-        match = re.search(r'(FY\d{4}|Q[1-4]\s+FY\d{4}|H[1-2]\s+FY\d{4}|FY\d{4}-FY\d{4}|\w+)', normalized)
-        if match:
-            return match.group(1)
+        # Extract standard period format from response
+        # Priority order: most specific patterns first
+        patterns = [
+            r'(Q[1-4]\s+FY\d{4})',      # Q1 FY2025
+            r'(H[1-2]\s+FY\d{4})',       # H1 FY2025
+            r'(FY\d{4}-FY\d{4})',        # FY2021-FY2024
+            r'(FY\d{4})',                # FY2025
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                return match.group(1)
 
-        return normalized
+        # If no standard format found, return cleaned response
+        return normalized if normalized else raw_period
+        
     except Exception as e:
         print(f"  [WARN] Agent normalization failed: {e}")
-        return raw_period  # Return original if agent fails
+        return raw_period
 
 
 # Quick regex-based normalization for simple cases
 # This can be used as a fast-path before calling the LLM
 def quick_normalize(raw_period: str) -> Optional[str]:
     """
-    Fast regex-based normalization for obvious cases.
-    Returns None if case is too complex and needs LLM reasoning.
+    Fast regex-based normalization for common period formats.
+    Returns None if the period is too complex and needs agent reasoning.
+    
+    Handles ~80% of cases without LLM calls.
     """
     if not raw_period:
         return None
 
     raw = raw_period.strip()
-
-    # Already standard
+    
+    # ===== ALREADY STANDARD =====
     if re.match(r"^FY\d{4}$", raw):
         return raw
     if re.match(r"^Q[1-4]\s+FY\d{4}$", raw):
         return raw
+    if re.match(r"^H[1-2]\s+FY\d{4}$", raw):
+        return raw
+    if re.match(r"^FY\d{4}-FY\d{4}$", raw):
+        return raw
 
+    # ===== FISCAL YEAR PATTERNS =====
+    
     # FY 2025 → FY2025
-    m = re.match(r"^FY\s+(\d{4})$", raw)
+    m = re.match(r"^FY\s+(\d{4})$", raw, re.IGNORECASE)
     if m:
         return f"FY{m.group(1)}"
 
     # FY25 → FY2025
-    m = re.match(r"^FY(\d{2})$", raw)
+    m = re.match(r"^FY(\d{2})$", raw, re.IGNORECASE)
     if m:
-        year = int(m.group(1))
-        full_year = 2000 + year if year >= 0 else 1900 + year
-        return f"FY{full_year}"
+        year = 2000 + int(m.group(1))
+        return f"FY{year}"
 
-    # Fiscal Year 2025 → FY2025
-    m = re.match(r"^[Ff]iscal\s+[Yy]ear\s+(\d{4})$", raw)
-    if m:
-        return f"FY{m.group(1)}"
-
-    # Full Year 2025 → FY2025
-    m = re.match(r"^[Ff]ull[\s-]?[Yy]ear\s+(\d{4})$", raw, re.IGNORECASE)
+    # Fiscal Year 2025, Fiscal 2025 → FY2025
+    m = re.match(r"^[Ff]iscal\s+(?:[Yy]ear\s+)?(\d{4})$", raw)
     if m:
         return f"FY{m.group(1)}"
 
+    # Full Year 2025, Full-Year 2025 → FY2025
+    m = re.match(r"^[Ff]ull[\s-]?[Yy]ear\s+(\d{4})$", raw)
+    if m:
+        return f"FY{m.group(1)}"
+
+    # ===== QUARTER PATTERNS =====
+    
     # Q1 FY 2025 → Q1 FY2025
-    m = re.match(r"^Q([1-4])\s+FY\s+(\d{4})$", raw)
+    m = re.match(r"^Q([1-4])\s+FY\s*(\d{4})$", raw, re.IGNORECASE)
     if m:
         return f"Q{m.group(1)} FY{m.group(2)}"
 
-    # FY25 Q1 → Q1 FY2025
-    m = re.match(r"^FY(\d{2})\s+Q([1-4])$", raw)
+    # Q1FY2025 (no space) → Q1 FY2025
+    m = re.match(r"^Q([1-4])FY(\d{4})$", raw, re.IGNORECASE)
+    if m:
+        return f"Q{m.group(1)} FY{m.group(2)}"
+
+    # Q1 2025 → Q1 FY2025 (always fiscal in corporate guidance)
+    m = re.match(r"^Q([1-4])\s+(\d{4})$", raw, re.IGNORECASE)
+    if m:
+        return f"Q{m.group(1)} FY{m.group(2)}"
+
+    # Q1'25, Q1 '25 → Q1 FY2025
+    m = re.match(r"^Q([1-4])\s*'?(\d{2})$", raw, re.IGNORECASE)
+    if m:
+        year = 2000 + int(m.group(2))
+        return f"Q{m.group(1)} FY{year}"
+
+    # FY25 Q1, FY2025 Q1 → Q1 FY2025
+    m = re.match(r"^FY(\d{2,4})\s+Q([1-4])$", raw, re.IGNORECASE)
     if m:
         year = int(m.group(1))
-        full_year = 2000 + year
-        return f"Q{m.group(2)} FY{full_year}"
+        if year < 100:
+            year = 2000 + year
+        return f"Q{m.group(2)} FY{year}"
 
-    # FY2025 Q1 → Q1 FY2025
-    m = re.match(r"^FY(\d{4})\s+Q([1-4])$", raw)
+    # First/Second/Third/Fourth Quarter 2025 → Q# FY2025
+    quarter_words = {
+        'first': '1', 'second': '2', 'third': '3', 'fourth': '4',
+        '1st': '1', '2nd': '2', '3rd': '3', '4th': '4'
+    }
+    m = re.match(r"^(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\s+(\d{4})$", raw, re.IGNORECASE)
     if m:
-        return f"Q{m.group(2)} FY{m.group(1)}"
+        q = quarter_words[m.group(1).lower()]
+        return f"Q{q} FY{m.group(2)}"
 
-    # Q1 2025 → Q1 FY2025 (ALWAYS fiscal)
-    m = re.match(r"^Q([1-4])\s+(\d{4})$", raw)
+    # ===== HALF-YEAR PATTERNS =====
+    
+    # H1 2025, H1 FY 2025 → H1 FY2025
+    m = re.match(r"^H([1-2])\s+(?:FY\s*)?(\d{4})$", raw, re.IGNORECASE)
     if m:
-        return f"Q{m.group(1)} FY{m.group(2)}"
+        return f"H{m.group(1)} FY{m.group(2)}"
 
-    # First Quarter 2025 → Q1 FY2025
-    m = re.match(r"^First\s+Quarter\s+(\d{4})$", raw, re.IGNORECASE)
+    # First Half 2025, 1H 2025 → H1 FY2025
+    m = re.match(r"^(?:first\s+half|1H)\s+(\d{4})$", raw, re.IGNORECASE)
     if m:
-        return f"Q1 FY{m.group(1)}"
+        return f"H1 FY{m.group(1)}"
 
+    # Second Half 2025, 2H 2025 → H2 FY2025
+    m = re.match(r"^(?:second\s+half|2H)\s+(\d{4})$", raw, re.IGNORECASE)
+    if m:
+        return f"H2 FY{m.group(1)}"
+
+    # ===== MULTI-YEAR PATTERNS =====
+    
     # 2021-2024 → FY2021-FY2024
-    m = re.match(r"^(\d{4})\s*-\s*(\d{4})$", raw)
+    m = re.match(r"^(\d{4})\s*[-–—]\s*(\d{4})$", raw)
     if m:
         return f"FY{m.group(1)}-FY{m.group(2)}"
 
-    # Too complex - needs LLM
+    # FY21-FY24 → FY2021-FY2024
+    m = re.match(r"^FY(\d{2})\s*[-–—]\s*FY(\d{2})$", raw, re.IGNORECASE)
+    if m:
+        y1 = 2000 + int(m.group(1))
+        y2 = 2000 + int(m.group(2))
+        return f"FY{y1}-FY{y2}"
+
+    # ===== CALENDAR YEAR (explicit only) =====
+    
+    # CY2025, Calendar Year 2025 → CY2025 (keep distinct from fiscal)
+    m = re.match(r"^(?:CY|[Cc]alendar\s+[Yy]ear)\s*(\d{4})$", raw)
+    if m:
+        return f"CY{m.group(1)}"
+
+    # Too complex - needs agent
     return None
+

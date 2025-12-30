@@ -28,9 +28,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 from llm_setup import setup_llm
 from extractor_lib.guidance_schema import Guidance, GuidanceExtraction
 from extractor_lib.period_normalizer import (
-    normalize_period_tool,
     get_fiscal_calendar_info,
     quick_normalize,
+    normalize_period,
     create_period_normalization_agent,
     normalize_with_agent
 )
@@ -212,7 +212,7 @@ class LLMExtractor:
         - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
         - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
         - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
-        - reporting_period: Extract the period as mentioned in the text, then use the normalize_period_tool to standardize it. (string or null)
+        - reporting_period: The reporting period as mentioned (e.g., "Q2 2025", "FY2025", "full year 2024"). Will be normalized in post-processing. (string or null)
         - current_value: Current/most-recent numeric value (number or null)
         - unit: MUST be one of: "million", "billion", "%" (or null)
         - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
@@ -221,8 +221,6 @@ class LLMExtractor:
         - revision_direction: "increased", "decreased" or null, compared to previous guidance ONLY (string or null)
         - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
         - rationales: Any qualitative explanations or reasons given for this guidance, keep it brief (string or null)
-
-        IMPORTANT: You have access to normalize_period_tool. When you extract a reporting period, call this tool to normalize it before including it in your output.
 
         With your current logic you are slightly too liberal in your classification of forward-looking statements:
         Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
@@ -248,7 +246,7 @@ class LLMExtractor:
             self._period_agent = create_period_normalization_agent(self.llm)
         return self._period_agent
 
-    def _normalize_period_3stage(
+    def _normalize_period(
         self,
         raw_period: str,
         company: str = "",
@@ -256,10 +254,9 @@ class LLMExtractor:
         statement_text: str = ""
     ) -> str:
         """
-        3-stage period normalization:
-        1. Quick regex normalization (fast, handles 80% of cases)
-        2. If that fails, use ReActAgent with tools (handles complex/ambiguous cases)
-        3. If agent fails, return original
+        Two-stage period normalization:
+        1. Fast regex (handles 80%+ of cases)
+        2. ReActAgent for complex/ambiguous periods
 
         Args:
             raw_period: Raw period string from extraction
@@ -270,25 +267,13 @@ class LLMExtractor:
         Returns:
             Normalized period string
         """
-        if not raw_period:
-            return raw_period
-
-        # Stage 1: Quick normalize
-        quick_result = quick_normalize(raw_period)
-        if quick_result:
-            return quick_result
-
-        # Stage 2: Agent-based normalization for complex cases
-        print(f"  [AGENT] Using agent for complex period: '{raw_period}'")
-        agent_result = normalize_with_agent(
-            self.period_agent,
+        return normalize_period(
             raw_period,
-            company,
-            published_at,
-            statement_text
+            company=company,
+            published_at=published_at,
+            statement_text=statement_text,
+            agent=self.period_agent
         )
-
-        return agent_result
 
     def _attach_metadata(self, item: Guidance, metadata: Optional[Dict[str, Any]]) -> None:
         """Attach metadata to a Guidance item."""
@@ -480,6 +465,15 @@ class LLMExtractor:
                 # Attach metadata
                 self._attach_metadata(parsed, metadata)
 
+                # Normalize reporting period (two-stage: fast regex then agent if needed)
+                # Even if reporting_period is missing, we try to infer it using the agent
+                parsed.reporting_period = self._normalize_period(
+                    raw_period=parsed.reporting_period or "",
+                    company=parsed.company or "",
+                    published_at=metadata.get('published_at', '') if metadata else "",
+                    statement_text=parsed.statement_text or ""
+                )
+
                 # Improve statement_text by finding it in the full document and
                 # expanding the snippet so we show more preceding context.
                 st = parsed.statement_text or ""
@@ -524,36 +518,6 @@ class LLMExtractor:
                     except Exception:
                         # If anything goes wrong, keep the original statement_text
                         pass
-
-                # SMART FILTER: Check if statement is predominantly historical vs forward-looking
-                # Instead of binary reject, score both types of language and only reject if heavily historical
-                statement_lower = (parsed.statement_text or "").lower()
-                
-                # Count forward-looking signals (strong indicators of guidance)
-                forward_keywords = [
-                    r'\bexpect\w*\b', r'\bforecast\w*\b', r'\bproject\w*\b', r'\banticipat\w*\b',
-                    r'\bguidance\b', r'\boutlook\b', r'\btarget\w*\b', r'\bplan\w*\b',
-                    r'\bwill be\b', r'\bwill reach\b', r'\bwill grow\b',
-                    r'\bto be\b.*\$', r'\bfor (?:Q|FY)\d+\b'  # "to be $X" or "for Q2/FY2025"
-                ]
-                forward_score = sum(1 for pattern in forward_keywords if re.search(pattern, statement_lower))
-                
-                # Count past-tense signals (only strongly historical ones, not comparative context)
-                # Exclude phrases that are often used alongside guidance (e.g., "compared to" in ranges)
-                strong_past_keywords = [
-                    r'\bfiscal year ended\b', r'\bquarter ended\b',
-                    r'\breported (?:revenue|earnings|income)\b',
-                    r'\bannounced.*results?\b',
-                    r'\bwas \$[\d.]+ (?:billion|million)\b',  # "was $X billion" (specific past value)
-                    r'\bincreased \d+%\b.*\bcompared to\b'  # "increased X% compared to" (pure historical)
-                ]
-                strong_past_score = sum(1 for pattern in strong_past_keywords if re.search(pattern, statement_lower))
-                
-                # Only reject if statement is PREDOMINANTLY historical (no forward signals + strong past signals)
-                if strong_past_score >= 2 and forward_score == 0:
-                    print(f"  [FILTER] Rejected purely historical item: {parsed.guidance_type} (past_score={strong_past_score}, forward_score={forward_score})")
-                    continue  # Skip this item
-
                 guidance_items.append(parsed)
             
             # Deduplicate: Remove items with highly overlapping statement_text AND similar content
@@ -686,15 +650,15 @@ class LLMExtractor:
                 self._attach_metadata(parsed, metadata)
                 parsed.extraction_method = "reasoning"
 
-                # Post-process: 3-stage period normalization
-                if parsed.reporting_period:
-                    normalized = self._normalize_period_3stage(
-                        raw_period=parsed.reporting_period,
-                        company=parsed.company or "",
-                        published_at=metadata.get('published_at', '') if metadata else "",
-                        statement_text=parsed.statement_text or ""
-                    )
-                    parsed.reporting_period = normalized
+                # Post-process: two-stage period normalization
+                # Even if reporting_period is missing, we try to infer it using the agent
+                normalized = self._normalize_period(
+                    raw_period=parsed.reporting_period or "",
+                    company=parsed.company or "",
+                    published_at=metadata.get('published_at', '') if metadata else "",
+                    statement_text=parsed.statement_text or ""
+                )
+                parsed.reporting_period = normalized
 
                 # Improve statement_text by finding it in the full document
                 st = parsed.statement_text or ""
