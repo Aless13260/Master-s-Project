@@ -12,7 +12,7 @@ DB_PATH = BASE_DIR / "finance_data.db"
 CONTENTS_PATH = BASE_DIR / "ingestion_json" / "contents.jsonl"
 CANDIDATES_PATH = BASE_DIR / "extractor_lib" / "candidate_guidance.jsonl"
 GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance.jsonl"
-AGENTIC_GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance_agentic.jsonl"
+REASONING_GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance_reasoning.jsonl"
 
 def drop_tables(conn):
     c = conn.cursor()
@@ -83,6 +83,7 @@ def create_tables(conn):
             sentiment_score REAL,
             risk_factors TEXT,
             processing_duration_seconds REAL,
+            source_url TEXT,
             FOREIGN KEY(content_uid) REFERENCES contents(uid)
         )
     ''')
@@ -159,7 +160,7 @@ def generate_deterministic_id(data_dict):
     """Generate a consistent ID based on the content of the guidance."""
     # Create a unique string signature for this item
     # We use content_uid + metric + value + statement to ensure uniqueness
-    # Also include extraction_method to differentiate between standard and agentic versions of the same item
+    # Also include extraction_method to differentiate between standard and reasoning versions of the same item
     unique_str = f"{data_dict.get('content_uid')}|{data_dict.get('metric_name')}|{data_dict.get('guidance_type')}|{data_dict.get('statement_text')}|{data_dict.get('extraction_method')}"
     return hashlib.md5(unique_str.encode('utf-8')).hexdigest()
 
@@ -199,8 +200,9 @@ def migrate_guidance(conn, file_path):
                         statement_text,
                         published_at, ingested_at, extracted_at,
                         extraction_method, agentic_review_comment,
-                        sentiment_label, sentiment_score, risk_factors, processing_duration_seconds
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        sentiment_label, sentiment_score, risk_factors, processing_duration_seconds,
+                        source_url
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     guid_id,
                     row_uid, # content_uid comes from the top level 'uid'
@@ -222,11 +224,12 @@ def migrate_guidance(conn, file_path):
                     g.get('ingested_at'),
                     g.get('extracted_at'),
                     g.get('extraction_method', 'standard'), # Default to 'standard' if missing
-                    g.get('agentic_review_comment') if g.get('extraction_method') == 'agentic_review' else None,
+                    g.get('agentic_review_comment') if g.get('extraction_method') == 'reasoning' else None,
                     g.get('sentiment_label'),
                     g.get('sentiment_score'),
                     g.get('risk_factors'),
-                    g.get('processing_duration_seconds')
+                    g.get('processing_duration_seconds'),
+                    row.get('source_url')  # source_url is at top level of row
                 ))
                 count += 1
             except Exception as e:
@@ -251,7 +254,7 @@ def main():
         migrate_contents(conn)
         migrate_candidates(conn)
         migrate_guidance(conn, GUIDANCE_PATH)
-        migrate_guidance(conn, AGENTIC_GUIDANCE_PATH)
+        migrate_guidance(conn, REASONING_GUIDANCE_PATH)
         print("\nMigration Complete!")
         print(f"You can now open '{DB_PATH.name}' with any SQLite viewer.")
     finally:

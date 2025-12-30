@@ -19,7 +19,7 @@ def main():
     parser.add_argument("--skip-ingest", action="store_true", help="Skip RSS ingestion and HTML/PDF parsing")
     parser.add_argument("--skip-filter", action="store_true", help="Skip regex filtering")
     parser.add_argument("--skip-extract", action="store_true", help="Skip LLM extraction")
-    parser.add_argument("--agentic", action="store_true", help="Use Agentic Review mode for extraction")
+    parser.add_argument("--reasoning", action="store_true", help="Use Reasoning mode for extraction")
     parser.add_argument("--max-items", type=int, help="Limit number of items for LLM extraction (testing)")
     parser.add_argument("--refresh-db", action="store_true", help="Drop and recreate SQLite tables")
     
@@ -45,8 +45,8 @@ def main():
     # 3. Extraction (Candidates -> JSONL)
     if not args.skip_extract:
         cmd = f'"{python_exe}" extractor_lib/LLM_extractor.py'
-        if args.agentic:
-            cmd += " --agentic"
+        if args.reasoning:
+            cmd += " --reasoning"
         if args.max_items:
             cmd += f" --max-items {args.max_items}"
         

@@ -59,14 +59,14 @@ class MultiGuidanceExtraction(BaseModel):
 class LLMExtractor:
     """Extract financial guidance using an LLM with structured output."""
     
-    def __init__(self, provider: str = "deepseek", model: str = None, agentic_model: str = None, temperature: float = 0.0, max_retries: int = 3):
+    def __init__(self, provider: str = "deepseek", model: str = None, reasoning_model: str = None, temperature: float = 0.0, max_retries: int = 3):
         """
         Initialize the extractor.
         
         Args:
             provider: LLM provider ("deepseek", "github", "openai", etc.)
             model: Model for initial extraction (default: deepseek-chat)
-            agentic_model: Model for agentic review (default: deepseek-reasoner if provider is deepseek)
+            reasoning_model: Model for reasoning extraction (default: deepseek-reasoner if provider is deepseek)
             temperature: 0.0 for deterministic extraction
             max_retries: Number of retry attempts for failed LLM calls
         """
@@ -76,16 +76,16 @@ class LLMExtractor:
         self.temperature = temperature
         self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
         
-        # Setup separate LLM for agentic review (Reasoning model)
-        if agentic_model:
-            self.agentic_model_name = agentic_model
+        # Setup separate LLM for reasoning (Reasoning model)
+        if reasoning_model:
+            self.reasoning_model_name = reasoning_model
         elif provider == "deepseek":
-            self.agentic_model_name = "deepseek-reasoner" # Default to reasoning model for DeepSeek
+            self.reasoning_model_name = "deepseek-reasoner" # Default to reasoning model for DeepSeek
         else:
-            self.agentic_model_name = self.model # Fallback to same model
+            self.reasoning_model_name = self.model # Fallback to same model
             
-        print(f"[LLM] Agentic Reviewer: {self.agentic_model_name}")
-        self.agentic_llm = setup_llm(provider=self.provider, model=self.agentic_model_name, temperature=self.temperature)
+        print(f"[LLM] Reasoning Model: {self.reasoning_model_name}")
+        self.reasoning_llm = setup_llm(provider=self.provider, model=self.reasoning_model_name, temperature=self.temperature)
         
         self.max_retries = max_retries
 
@@ -147,7 +147,14 @@ class LLMExtractor:
 
         With your current logic you are slightly too liberal in your classification of forward-looking statements:
         Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
-        
+        Here is are some additional instructions to help you improve your extraction accuracy:
+        Tax rate -> In -> Directly affects net income line
+        Segment revenue -> In -> Subsumes to total revenue
+        Buybacks -> Out -> Capital allocation, not performance
+        Bookings/backlog -> Out -> Leading indicator, not financial statement
+        Same-store sales -> Out -> Operational KPI
+        FX headwind -> In (if quantified) -> Impacts revenue/earnings directly
+
         Do NOT extract historical results. Do NOT return past performance data.
         """
 
@@ -205,7 +212,16 @@ class LLMExtractor:
 
         With your current logic you are slightly too liberal in your classification of forward-looking statements:
         Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
-        IF UNSURE OR AMBIGUOUS, THINK STEP BY STEP AND DECIDE CAREFULLY.
+        
+        Here is are some additional instructions to help you improve your extraction accuracy:
+        Tax rate -> In -> Directly affects net income line
+        Segment revenue -> In -> Subsumes to total revenue
+        Buybacks -> Out -> Capital allocation, not performance
+        Bookings/backlog -> Out -> Leading indicator, not financial statement
+        Same-store sales -> Out -> Operational KPI
+        FX headwind -> In (if quantified) -> Impacts revenue/earnings directly
+        
+        IF UNSURE OR AMBIGUOUS, THINK STEP BY STEP REFERING TO THE ABOVE JUSTIFICATIONS AND DECIDE CAREFULLY.
         
         Do NOT extract historical results. Do NOT return past performance data.
         """
@@ -309,7 +325,7 @@ class LLMExtractor:
             return focused_text
         
         # If no matches, return beginning (shouldn't happen with our pre-filtered candidates)
-        return text[:15000]
+        return text[:200000]
     
     def extract_from_text(
         self, 
@@ -333,8 +349,8 @@ class LLMExtractor:
         # Smart extraction: focus on relevant sections
         focused_text = self._extract_relevant_sections(text)
         
-        # Final length check (gpt-4o-mini handles ~8k tokens, we'll use ~4k tokens = ~16k chars max)
-        max_chars = 16000
+        # Final length check (DeepSeek handles 128k tokens, so we can be generous)
+        max_chars = 200000
         if len(focused_text) > max_chars:
             print(f"  [WARN] Truncating focused text from {len(focused_text)} to {max_chars} chars")
             focused_text = focused_text[:max_chars] + "\n... [truncated]"
@@ -533,138 +549,172 @@ class LLMExtractor:
             print(f"  [ERROR] Post-processing failed: {e}")
             return []
 
-    def extract_with_agentic_review(
+    def extract_with_reasoning(
         self, 
         text: str, 
         metadata: Optional[Dict[str, Any]] = None
     ) -> List[Guidance]:
         """
-        Two-stage extraction:
-        1. Initial extraction (same as extract_from_text)
-        2. Self-reflection/Review (Agentic step)
-        
-        This satisfies the "Agentic" requirement for research by implementing
-        a feedback loop where the model critiques and corrects its own output.
+        Standalone extraction using the Reasoning model.
+        Uses self.reasoning_llm and self.system2prompt.
         """
-        # Capture total start time (Stage 1 + Stage 2)
-        total_start_time = time.time()
-
-        # Stage 1: Initial Extraction
-        print("  [AGENT] Stage 1: Initial Extraction...")
-        initial_items = self.extract_from_text(text, metadata)
-        
-        if not initial_items:
-            print("  [AGENT] No items to review. Skipping Stage 2.")
+        if not text or len(text.strip()) < 50:
+            print("  [WARN] Text too short for extraction")
             return []
-            
-        # Stage 2: Review and Refine
-        print(f"  [AGENT] Stage 2: Reviewing {len(initial_items)} items...")
         
-        # Prepare the context for the review
-        # We need to feed back the extracted items to the LLM
-        current_extraction_json = json.dumps([item.model_dump() for item in initial_items], indent=2)
-        
-        # Smart extraction again to get the text context (reuse the logic)
+        # Smart extraction: focus on relevant sections
         focused_text = self._extract_relevant_sections(text)
-        if len(focused_text) > 16000:
-            focused_text = focused_text[:16000] + "\n... [truncated]"
+        
+        # Final length check
+        max_chars = 200000
+        if len(focused_text) > max_chars:
+            print(f"  [WARN] Truncating focused text from {len(focused_text)} to {max_chars} chars")
+            focused_text = focused_text[:max_chars] + "\n... [truncated]"
+        
+        # Capture start time for performance tracking
+        processing_start_time = time.time()
 
-        # Retry loop for Agentic Review
+        # Retry logic for LLM calls
+        result = None
+        
         for attempt in range(self.max_retries):
             try:
-                # Create the review program
-                # We reuse MultiGuidanceExtraction as the output format
-                # Use self.agentic_llm (Reasoning model) for this step
+                # Create structured extraction program
                 program = LLMTextCompletionProgram.from_defaults(
                     output_cls=MultiGuidanceExtraction,
-                    prompt_template_str=self.refinement_prompt + "\n\nSOURCE TEXT:\n{text}\n\nPREVIOUSLY EXTRACTED ITEMS:\n{current_extraction}\n\nCORRECTED ITEMS:",
-                    llm=self.agentic_llm,
+                    prompt_template_str=self.system2prompt + "\n\nDocument text:\n{text}\n\nExtract all guidance items:",
+                    llm=self.reasoning_llm,
                     verbose=False
                 )
                 
-                # Run the review
-                result = program(text=focused_text, current_extraction=current_extraction_json)
-                
-                # Parse results
-                refined_items: List[Guidance] = []
-                
-                # Get review metadata
-                summary = getattr(result, 'review_summary', "No summary provided")
-                changed = getattr(result, 'changes_made', False)
-                
-                if changed:
-                    print(f"  [AGENT] Reviewer Summary: {summary}")
-                
-                for item in result.guidance_items:
-                    # item is GuidanceExtraction (from LLM)
-                    if isinstance(item, GuidanceExtraction):
-                        # Convert to Guidance (full model)
-                        parsed = Guidance(**item.model_dump())
-                    elif isinstance(item, dict):
-                        parsed = Guidance.parse_obj(item)
-                    else:
-                        parsed = Guidance(**item.dict())
-                    
-                    # Force a fresh unique ID for the refined item
-                    parsed.guid = uuid4().hex
-
-                    # Attach metadata (CRITICAL: Re-attach metadata lost during round-trip)
-                    self._attach_metadata(parsed, metadata)
-
-                    # Tag this item as coming from the agentic review process
-                    parsed.extraction_method = "agentic_review"
-                    
-                    # Use the item-specific comment if the LLM provided it (as requested in prompt)
-                    # Fallback to global summary only if missing
-                    if not parsed.agentic_review_comment:
-                        parsed.agentic_review_comment = summary
-                    
-                    # Ensure sentiment fields are populated (if LLM missed them, set defaults)
-                    if not parsed.sentiment_label:
-                        parsed.sentiment_label = "neutral"
-                    if parsed.sentiment_score is None:
-                        parsed.sentiment_score = 0.5
-                    
-                    # Use item-specific flag if provided, otherwise fallback to global change flag
-                    if parsed.was_updated_by_agent is None:
-                        parsed.was_updated_by_agent = changed
-                    
-                    refined_items.append(parsed)
-                
-                # Compare counts to see if the agent made changes
-                if len(refined_items) != len(initial_items):
-                    print(f"  [AGENT] Refinement changed item count: {len(initial_items)} -> {len(refined_items)}")
-                else:
-                    print("  [AGENT] Refinement kept item count same (content may have changed).")
-                
-                # Update duration to reflect TOTAL time (Stage 1 + Stage 2)
-                total_duration = time.time() - total_start_time
-                
-                # Amortize duration across refined items
-                if refined_items:
-                    amortized_duration = total_duration / len(refined_items)
-                    for item in refined_items:
-                        item.processing_duration_seconds = amortized_duration
-
-                return refined_items
+                # Run extraction
+                result = program(text=focused_text)
+                break  # Success!
                 
             except Exception as e:
-                print(f"  [AGENT] Refinement attempt {attempt + 1}/{self.max_retries} failed: {e}")
                 if attempt < self.max_retries - 1:
                     wait_time = 2 ** attempt
-                    print(f"  [AGENT] Retrying in {wait_time} seconds...")
+                    print(f"  [RETRY] Reasoning attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
-                    print("  [AGENT] All refinement attempts failed. Returning initial extraction.")
-                    # Update duration to reflect the time spent failing
-                    total_duration = time.time() - total_start_time
-                    
-                    # Amortize duration across initial items (fallback)
-                    if initial_items:
-                        amortized_duration = total_duration / len(initial_items)
-                        for item in initial_items:
-                            item.processing_duration_seconds = amortized_duration
-                    return initial_items
+                    print(f"  [ERROR] All {self.max_retries} reasoning attempts failed: {e}")
+                    return []
+        
+        if not result:
+            print(f"  [ERROR] Reasoning extraction failed after {self.max_retries} attempts")
+            return []
+        
+        # Calculate duration
+        processing_duration = time.time() - processing_start_time
+
+        try:
+            guidance_items: List[Guidance] = []
+            for item in result.guidance_items:
+                # item is GuidanceExtraction (from LLM)
+                if isinstance(item, GuidanceExtraction):
+                    parsed = Guidance(**item.model_dump())
+                elif isinstance(item, dict):
+                    parsed = Guidance.parse_obj(item)
+                else:
+                    parsed = Guidance(**item.dict())
+
+                parsed.guid = uuid4().hex
+                self._attach_metadata(parsed, metadata)
+                parsed.extraction_method = "reasoning"
+
+                # Improve statement_text by finding it in the full document
+                st = parsed.statement_text or ""
+                if st:
+                    try:
+                        match_idx = text.lower().find(st.strip().lower())
+                        if match_idx != -1:
+                            para_start = text.rfind('\n\n', 0, match_idx)
+                            para_start = para_start + 2 if para_start != -1 else 0
+                            match_end = match_idx + len(st)
+                            para_end = text.find('\n\n', match_end)
+                            if para_end == -1: para_end = len(text)
+                            
+                            context_start = para_start
+                            if para_start > 0:
+                                prev_para_start = text.rfind('\n\n', 0, para_start - 2)
+                                prev_para_start = prev_para_start + 2 if prev_para_start != -1 else 0
+                                if (para_start - prev_para_start) < 300:
+                                    context_start = prev_para_start
+                            
+                            expanded_text = text[context_start:para_end].strip()
+                            if len(expanded_text) > 2000 or len(expanded_text) < len(st) + 50:
+                                pre = 600; post = 400
+                                start_snip = max(0, match_idx - pre)
+                                end_snip = min(len(text), match_end + post)
+                                expanded_text = text[start_snip:end_snip].strip()
+                            parsed.statement_text = expanded_text
+                    except Exception:
+                        pass
+
+                # SMART FILTER: Check if statement is predominantly historical vs forward-looking
+                statement_lower = (parsed.statement_text or "").lower()
+                forward_keywords = [
+                    r'\bexpect\w*\b', r'\bforecast\w*\b', r'\bproject\w*\b', r'\banticipat\w*\b',
+                    r'\bguidance\b', r'\boutlook\b', r'\btarget\w*\b', r'\bplan\w*\b',
+                    r'\bwill be\b', r'\bwill reach\b', r'\bwill grow\b',
+                    r'\bto be\b.*\$', r'\bfor (?:Q|FY)\d+\b'
+                ]
+                forward_score = sum(1 for pattern in forward_keywords if re.search(pattern, statement_lower))
+                strong_past_keywords = [
+                    r'\bfiscal year ended\b', r'\bquarter ended\b',
+                    r'\breported (?:revenue|earnings|income)\b',
+                    r'\bannounced.*results?\b',
+                    r'\bwas \$[\d.]+ (?:billion|million)\b',
+                    r'\bincreased \d+%\b.*\bcompared to\b'
+                ]
+                strong_past_score = sum(1 for pattern in strong_past_keywords if re.search(pattern, statement_lower))
+                
+                if strong_past_score >= 2 and forward_score == 0:
+                    print(f"  [FILTER] Rejected purely historical item: {parsed.guidance_type}")
+                    continue
+
+                guidance_items.append(parsed)
+            
+            # Deduplicate
+            if len(guidance_items) > 1:
+                deduplicated = []
+                for item in guidance_items:
+                    statement = (item.statement_text or "").strip()
+                    is_duplicate = False
+                    for existing in deduplicated:
+                        existing_statement = (existing.statement_text or "").strip()
+                        text_overlap = False
+                        if len(statement) > 50 and len(existing_statement) > 50:
+                            shorter = min(statement, existing_statement, key=len)
+                            longer = max(statement, existing_statement, key=len)
+                            overlap_ratio = len(shorter) / len(longer) if len(longer) > 0 else 0
+                            text_overlap = (overlap_ratio > 0.7 or shorter in longer)
+                        
+                        content_identical = (
+                            item.guidance_type == existing.guidance_type and
+                            item.metric_name == existing.metric_name and
+                            item.guided_range_low == existing.guided_range_low and
+                            item.guided_range_high == existing.guided_range_high
+                        )
+                        if text_overlap and content_identical:
+                            is_duplicate = True
+                            break
+                    if not is_duplicate:
+                        deduplicated.append(item)
+                guidance_items = deduplicated
+                
+            if guidance_items:
+                amortized_duration = processing_duration / len(guidance_items)
+                for item in guidance_items:
+                    item.processing_duration_seconds = round(amortized_duration, 2)
+                print(f"  [REASONING] Extracted {len(guidance_items)} guidance items")
+            else:
+                print("  [REASONING] No guidance items found")
+            return guidance_items
+
+        except Exception as e:
+            print(f"  [ERROR] Post-processing failed: {e}")
+            return []
 
 
 def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None, randomize: bool = False) -> List[Dict[str, Any]]:
@@ -718,21 +768,21 @@ def main():
     parser.add_argument("--random", action="store_true", help="Randomly sample max-items instead of taking the first N")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
-    parser.add_argument("--agentic", action="store_true", help="Enable agentic self-correction loop (slower but more accurate)")
+    parser.add_argument("--reasoning", action="store_true", help="Enable reasoning model extraction (slower but more accurate)")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers to use")
     
     args = parser.parse_args()
 
-    # If using default output path and agentic mode is on, switch to agentic filename
-    if args.agentic and args.output == OUTPUT_PATH:
-        args.output = OUTPUT_PATH.with_name("extracted_guidance_agentic.jsonl")
+    # If using default output path and reasoning mode is on, switch to reasoning filename
+    if args.reasoning and args.output == OUTPUT_PATH:
+        args.output = OUTPUT_PATH.with_name("extracted_guidance_reasoning.jsonl")
     
     print("=" * 60)
     print("LLM GUIDANCE EXTRACTION")
     print("=" * 60)
     print(f"Provider: {args.provider}")
     print(f"Model: {args.model}")
-    print(f"Mode: {'Agentic (Review Loop)' if args.agentic else 'Standard (Single Pass)'}")
+    print(f"Mode: {'Reasoning (Standalone)' if args.reasoning else 'Standard (Single Pass)'}")
     print(f"Max retries: {args.max_retries}")
     print(f"Output: {args.output}")
     if args.max_items:
@@ -799,8 +849,8 @@ def main():
                 max_retries=args.max_retries
             )
             
-            if args.agentic:
-                guidance_items = thread_extractor.extract_with_agentic_review(full_text, metadata)
+            if args.reasoning:
+                guidance_items = thread_extractor.extract_with_reasoning(full_text, metadata)
             else:
                 guidance_items = thread_extractor.extract_from_text(full_text, metadata)
             
