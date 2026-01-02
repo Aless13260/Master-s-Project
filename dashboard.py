@@ -115,12 +115,11 @@ def load_data():
         g.is_revision AS "Is Revision",
         g.revision_direction AS "Revision Dir",
         g.qualitative_direction AS "Direction",
-        g.sentiment_label AS "Sentiment",
-        g.sentiment_score AS "Sentiment Score",
-        g.published_at AS "Published",
-        g.source_url AS "Source"
+        c.published_at AS "Published",
+        c.link AS "Source"
     FROM guidance g
-    ORDER BY g.published_at DESC
+    LEFT JOIN contents c ON g.content_uid = c.uid
+    ORDER BY c.published_at DESC
     """
     df = pd.read_sql_query(query, conn)
     conn.close()

@@ -116,11 +116,29 @@ def main():
             print(f"Processing {i+1}/{len(records)}: {uid} ({len(text)} chars, source: {source_type})...")
             
             try:
+                # Build metadata for better extraction context
+                # For synthetic docs, use document-level fields
+                # For real docs, these may come from the record or be inferred
+                published_at = record.get('published_at', '')
+                company_name = record.get('company_name', '')
+                
+                # Synthetic docs may have company in metadata
+                if not company_name and record.get('synthetic_metadata'):
+                    company_info = record.get('synthetic_metadata', {}).get('company', {})
+                    company_name = company_info.get('name', '')
+                
+                metadata = {
+                    'source_url': record.get('source_url'),
+                    'published_at': published_at,
+                    'source_id': record.get('source_id'),
+                    'company_name': company_name,  # Pass company for period normalization
+                }
+                
                 # Extract guidance based on selected mode
                 if args.reasoning:
-                    guidance_items = extractor.extract_with_reasoning(text)
+                    guidance_items = extractor.extract_from_text(text, metadata, use_agentic_normalization=True)
                 else:
-                    guidance_items = extractor.extract_from_text(text)
+                    guidance_items = extractor.extract_from_text(text, metadata, use_agentic_normalization=False)
                 
                 # Collect all items for this document
                 guidance_list = []

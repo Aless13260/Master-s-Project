@@ -18,21 +18,17 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from uuid import uuid4
 import argparse
-from llama_index.core.program import LLMTextCompletionProgram
-from llama_index.core.tools import FunctionTool
-from llama_index.core.agent import ReActAgent
+from llama_index.core.llms import ChatMessage
 from pydantic import BaseModel, Field
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 # Import your LLM setup and guidance schema
 sys.path.append(str(Path(__file__).parent.parent))
 from llm_setup import setup_llm
 from extractor_lib.guidance_schema import Guidance, GuidanceExtraction
 from extractor_lib.period_normalizer import (
-    get_fiscal_calendar_info,
-    quick_normalize,
     normalize_period,
     create_period_normalization_agent,
-    normalize_with_agent
 )
 from ticker_map import load_ticker_map
 
@@ -96,6 +92,15 @@ class LLMExtractor:
         print(f"[LLM] Reasoning Model: {self.reasoning_model_name}")
         self.reasoning_llm = setup_llm(provider=self.provider, model=self.reasoning_model_name, temperature=self.temperature)
 
+        # Setup utility LLM for tools (agents) - MUST support function calling
+        # DeepSeek Reasoner (R1) does NOT support tools, so we force deepseek-chat for agents
+        if provider == "deepseek":
+            self.tool_llm_name = "deepseek-chat"
+        else:
+            self.tool_llm_name = self.model # Assume other providers' main models support tools
+            
+        self.tool_llm = setup_llm(provider=self.provider, model=self.tool_llm_name, temperature=self.temperature)
+
         self.max_retries = max_retries
 
         # Create period normalization agent (lazy-loaded, only created if needed)
@@ -115,6 +120,7 @@ class LLMExtractor:
         ✓ "guidance for full year EPS of $5.00 to $5.50"
         ✓ "anticipates operating margin of approximately 30%"
         ✓ "targeting 10% growth in FY2026"
+        ✓ "plans to increase capital expenditures to $2 billion"
 
         HANDLING MULTIPLE ITEMS (CRITICAL):
         If a single sentence contains multiple metrics (e.g., "Revenue of $10B and EPS of $2.00"), you MUST create separate JSON objects for each metric.
@@ -137,11 +143,22 @@ class LLMExtractor:
         ✗ "launching new product in Q3" (Product launch without revenue guidance)
 
         Look for forward-looking verbs: expects, guidance, outlook, forecast, projects, anticipates, targets, will be, plans to
-        REJECT past-tense verbs: was, were, reported, announced, increased, decreased, grew, ended, posted
         REJECT operational metrics: headcount, employees, roles, team size, users, subscribers (unless explicitly revenue-related)
 
         You will extract guidance on financial statement items (revenue, earnings, etc.) and key operational metrics that directly
         impact financial performance (e.g., AOV for marketplaces, subscriber growth for SaaS). Purely qualitative commentary without clear financial linkage is excluded.
+        
+        Category definitions for financial guidance extraction:
+
+        - revenue: Dollar-denominated sales figures (net sales, total revenue, segment revenue). Not unit volumes or delivery counts.
+        - earnings: Net income, profit, operating income, or other profit-line metrics in dollar terms.
+        - EPS: Earnings per share, explicitly stated as a per-share figure.
+        - opex: Operating expenses, SG&A, R&D spend, or other cost-line items. Includes expense growth guidance.
+        - capex: Capital expenditures, infrastructure investment, property/equipment spending.
+        - margin: Percentage-based profitability metrics (gross margin, operating margin, net margin, profit margin).
+        - cash_flow: Operating cash flow, free cash flow, or general cash flow guidance in dollar terms.
+        - ebitda: EBITDA or adjusted EBITDA, explicitly stated.
+        - other: Financial metrics that don't fit above categories (e.g., average order value, gross merchandise value, ARPU, segment-specific losses). Use for dollar-denominated or ratio-based business metrics only. Exclude purely operational KPIs like unit volumes, subscriber counts, or delivery numbers.
 
         For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
         - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
@@ -149,7 +166,7 @@ class LLMExtractor:
         - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
         - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025", keep format consistent e.g. don't vary format to sometimes say full-year 2024, sometimes FY2024)  (or null)
         - current_value: Current/most-recent numeric value (number or null)
-        - unit: MUST be one of: "million", "billion", "%" (or null)
+        - unit: MUST be one of: "million", "billion", "%", "USD", "units" (or null)
         - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
         - guided_range_high: The high end of the range (if range). Leave null if single number. (number or null)
         - is_revision: true/false indicating if this is a revision to prior guidance, e.g. updated from our prior outlook of $94-99 billion would yield true (boolean)
@@ -157,149 +174,93 @@ class LLMExtractor:
         - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
         - rationales: Any qualitative explanations or reasons given for this guidance, keep it brief (string or null)
 
-        With your current logic you are slightly too liberal in your classification of forward-looking statements:
-        Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
-        Here is are some additional instructions to help you improve your extraction accuracy:
-        Tax rate -> In -> Directly affects net income line
-        Segment revenue -> In -> Subsumes to total revenue
-        Buybacks -> Out -> Capital allocation, not performance
-        Bookings/backlog -> Out -> Leading indicator, not financial statement
-        Same-store sales -> Out -> Operational KPI
-        FX headwind -> In (if quantified) -> Impacts revenue/earnings directly
 
         Do NOT extract historical results. Do NOT return past performance data.
         """
 
-        self.system2prompt = """
-        You are a financial analyst specialized in extracting forward-looking financial guidance from corporate filings, earnings releases, and press statements.
-
-        CRITICAL: Only extract FORWARD-LOOKING guidance. DO NOT extract historical results or past performance.
-
-        EXAMPLES OF FORWARD-LOOKING (extract these):
-        ✓ "expects revenue to be $50-52 billion for Q2"
-        ✓ "guidance for full year EPS of $5.00 to $5.50"
-        ✓ "anticipates operating margin of approximately 30%"
-        ✓ "targeting 10% growth in FY2026"
-
-        HANDLING MULTIPLE ITEMS (CRITICAL):
-        If a single sentence contains multiple metrics (e.g., "Revenue of $10B and EPS of $2.00"), you MUST create separate JSON objects for each metric.
-        - Object 1: Revenue, $10B
-        - Object 2: EPS, $2.00
-        Do NOT combine them. Do NOT skip items. Extract EVERY distinct forward-looking metric found.
-
-        EXAMPLES OF HISTORICAL (DO NOT extract these):
-        ✗ "revenue was $281.7 billion and increased 15%"
-        ✗ "net income was $101.8 billion"
-        ✗ "reported earnings of $13.64 per share"
-        ✗ "operating income increased 17%"
-        ✗ "fiscal year ended June 30, 2025 results"
-
-        EXAMPLES OF OPERATIONAL/NON-FINANCIAL (DO NOT extract these):
-        ✗ "plans to reduce team size by 10,000" (Headcount/HR)
-        ✗ "expects to close 5,000 open roles" (Headcount/HR)
-        ✗ "aims to complete efficiency analysis by summer" (Strategic milestone without financial value)
-        ✗ "targeting developer productivity enhancements" (Operational goal)
-        ✗ "launching new product in Q3" (Product launch without revenue guidance)
-
-        Look for forward-looking verbs: expects, guidance, outlook, forecast, projects, anticipates, targets, will be, plans to
-        REJECT past-tense verbs: was, were, reported, announced, increased, decreased, grew, ended, posted
-        REJECT operational metrics: headcount, employees, roles, team size, users, subscribers (unless explicitly revenue-related)
-
-        You will extract guidance on financial statement items (revenue, earnings, etc.) and key operational metrics that directly
-        impact financial performance (e.g., AOV for marketplaces, subscriber growth for SaaS). Purely qualitative commentary without clear financial linkage is excluded.
-
-        For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
-        - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
-        - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
-        - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
-        - reporting_period: The reporting period as mentioned (e.g., "Q2 2025", "FY2025", "full year 2024"). Will be normalized in post-processing. (string or null)
-        - current_value: Current/most-recent numeric value (number or null)
-        - unit: MUST be one of: "million", "billion", "%" (or null)
-        - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
-        - guided_range_high: The high end of the range (if range). Leave null if single number. (number or null)
-        - is_revision: true/false indicating if this is a revision to prior guidance, e.g. updated from our prior outlook of $94-99 billion would yield true (boolean)
-        - revision_direction: "increased", "decreased" or null, compared to previous guidance ONLY (string or null)
-        - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
-        - rationales: Any qualitative explanations or reasons given for this guidance, keep it brief (string or null)
-
-        With your current logic you are slightly too liberal in your classification of forward-looking statements:
-        Watch out for statements that are foward looking but not financial enough like advertising spend, headcount plans, legal predictions, etc., DO NOT EXTRACT THEM.
-
-        Here is are some additional instructions to help you improve your extraction accuracy:
-        Tax rate -> In -> Directly affects net income line
-        Segment revenue -> In -> Subsumes to total revenue
-        Buybacks -> Out -> Capital allocation, not performance
-        Bookings/backlog -> Out -> Leading indicator, not financial statement
-        Same-store sales -> Out -> Operational KPI
-        FX headwind -> In (if quantified) -> Impacts revenue/earnings directly
-
-        IF UNSURE OR AMBIGUOUS, THINK STEP BY STEP REFERING TO THE ABOVE JUSTIFICATIONS AND DECIDE CAREFULLY.
-
-        Do NOT extract historical results. Do NOT return past performance data.
-        """
+        
 
     @property
     def period_agent(self):
-        """Lazy-load the period normalization agent."""
+        """Lazy-load the period normalization agent with hierarchical LLM setup."""
         if self._period_agent is None:
-            print("  [AGENT] Creating period normalization agent...")
-            self._period_agent = create_period_normalization_agent(self.llm)
+            try:
+                print("  [AGENT] Creating period normalization agent...")
+                print(f"    - Agent LLM (tool-calling): {self.tool_llm_name}")
+                # Hierarchical setup:
+                # - agent_llm: deepseek-chat (supports function calling)
+                self._period_agent = create_period_normalization_agent(
+                    agent_llm=self.tool_llm,
+                    reasoning_llm=self.tool_llm
+                )
+            except Exception as e:
+                print(f"  [WARN] Failed to create period agent: {e}")
+                # Fallback to None (will skip agent-based normalization)
+                self._period_agent = None
         return self._period_agent
 
     def _normalize_period(
         self,
-        raw_period: str,
+        raw_period: Optional[str],
         company: str = "",
         published_at: str = "",
-        statement_text: str = ""
-    ) -> str:
+        statement_text: str = "",
+        use_agent: bool = False
+    ) -> Optional[str]:
         """
         Two-stage period normalization:
         1. Fast regex (handles 80%+ of cases)
-        2. ReActAgent for complex/ambiguous periods
+        2. FunctionAgent for complex/ambiguous periods (if use_agent=True)
 
         Args:
-            raw_period: Raw period string from extraction
+            raw_period: Raw period string from extraction (can be None)
             company: Company name for fiscal calendar lookup
             published_at: Document publish date
             statement_text: Context text
+            use_agent: Whether to use the agent for complex cases
 
         Returns:
-            Normalized period string
+            Normalized period string, or None if normalization fails/not possible
         """
-        return normalize_period(
-            raw_period,
+        # normalize_period handles None/empty gracefully
+        # It will try agent-based inference if raw_period is missing AND agent is provided
+        
+        agent_to_use = self.period_agent if use_agent else None
+        
+        result = normalize_period(
+            raw_period=raw_period or "",
             company=company,
             published_at=published_at,
             statement_text=statement_text,
-            agent=self.period_agent
+            agent=agent_to_use
         )
+        
+        # Return None instead of empty string for cleaner downstream handling
+        return result if result else None
 
     def _attach_metadata(self, item: Guidance, metadata: Optional[Dict[str, Any]]) -> None:
-        """Attach metadata to a Guidance item."""
+        """Attach metadata to a Guidance item.
+        
+        Note: Document-level metadata (source_url, published_at, ingested_at) are stored
+        at the document level, not duplicated per guidance item.
+        """
         if not metadata:
             return
 
-        if metadata.get("source_url"):
-            item.source_url = metadata.get("source_url")
-        
-        # Set dates
-        if metadata.get("published_at"):
-            item.published_at = metadata.get("published_at")
-        if metadata.get("fetched_at"):
-            item.ingested_at = metadata.get("fetched_at")
-        
         # Set extraction time (now)
         item.extracted_at = datetime.now(timezone.utc).isoformat()
+
+        # Auto-fill Company Name (priority: extracted > metadata > source_id map)
+        if not item.company:
+            if metadata.get("company_name"):
+                item.company = metadata.get("company_name")
+            elif metadata.get("source_id") and metadata.get("source_id") in COMPANY_MAP:
+                item.company = COMPANY_MAP[metadata.get("source_id")]
 
         if metadata.get("source_id"):
             sid = str(metadata.get("source_id")).lower()
             
-            # 1. Auto-fill Company Name from Source ID
-            if not item.company and metadata.get("source_id") in COMPANY_MAP:
-                item.company = COMPANY_MAP[metadata.get("source_id")]
-            
-            # 2. Map source_type
+            # Map source_type based on source_id
             if "8-k" in sid or "8k" in sid:
                 item.source_type = "8-K"
             elif "10-k" in sid or "10k" in sid:
@@ -379,7 +340,8 @@ class LLMExtractor:
     def extract_from_text(
         self, 
         text: str, 
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        use_agentic_normalization: bool = False
     ) -> List[Guidance]:
         """
         Extract guidance items from raw text with smart section extraction.
@@ -387,6 +349,7 @@ class LLMExtractor:
         Args:
             text: The document text to analyze
             metadata: Optional metadata (company, source_url, etc.)
+            use_agentic_normalization: Whether to use agent for period normalization
             
         Returns:
             List of Guidance objects
@@ -413,21 +376,57 @@ class LLMExtractor:
         
         for attempt in range(self.max_retries):
             try:
-                # Create structured extraction program
-                program = LLMTextCompletionProgram.from_defaults(
-                    output_cls=MultiGuidanceExtraction,
-                    prompt_template_str=self.system_prompt + "\n\nDocument text:\n{text}\n\nExtract all guidance items:",
-                    llm=self.llm,
-                    verbose=False
-                )
+                # Use regular chat with JSON schema in prompt
+                # as_structured_llm can conflict with detailed system prompts
+                schema_reminder = """
                 
-                # Run extraction
-                result = program(text=focused_text)
+OUTPUT FORMAT: Return a JSON object with this exact structure:
+{
+    "guidance_items": [
+        {
+            "guidance_type": "revenue|earnings|EPS|opex|capex|margin|cash_flow|ebitda|other",
+            "metric_name": "string",
+            "statement_text": "string",
+            "reporting_period": "string or null",
+            "current_value": "number or null",
+            "unit": "million|billion|%|USD|null",
+            "guided_range_low": "number or null",
+            "guided_range_high": "number or null",
+            "is_revision": "boolean",
+            "revision_direction": "increased|decreased|null",
+            "qualitative_direction": "string or null",
+            "rationales": "string or null"
+        }
+    ],
+    "review_summary": "Brief summary",
+    "changes_made": true
+}
+
+IMPORTANT: Return ONLY valid JSON. No markdown, no code blocks, no explanations outside the JSON.
+If you find forward-looking guidance, extract it. Do not return an empty guidance_items array if there is guidance present.
+"""
+                
+                messages = [
+                    ChatMessage(role="system", content=self.system_prompt + schema_reminder),
+                    ChatMessage(role="user", content=f"Document text:\n{focused_text}\n\nExtract all forward-looking guidance items as JSON:")
+                ]
+                
+                # Run extraction with regular LLM
+                response = self.llm.chat(messages)
+                json_content = response.message.content
+                
+                # Clean markdown if present
+                if "```json" in json_content:
+                    json_content = json_content.split("```json")[1].split("```")[0].strip()
+                elif "```" in json_content:
+                    json_content = json_content.split("```")[1].split("```")[0].strip()
+                
+                # Parse JSON
+                result = MultiGuidanceExtraction.model_validate_json(json_content)
                 break  # Success!
                 
             except Exception as e:
                 last_error = e
-                msg = str(e).lower()
                 
                 if attempt < self.max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
@@ -468,10 +467,11 @@ class LLMExtractor:
                 # Normalize reporting period (two-stage: fast regex then agent if needed)
                 # Even if reporting_period is missing, we try to infer it using the agent
                 parsed.reporting_period = self._normalize_period(
-                    raw_period=parsed.reporting_period or "",
+                    raw_period=parsed.reporting_period,
                     company=parsed.company or "",
                     published_at=metadata.get('published_at', '') if metadata else "",
-                    statement_text=parsed.statement_text or ""
+                    statement_text=parsed.statement_text or "",
+                    use_agent=use_agentic_normalization
                 )
 
                 # Improve statement_text by finding it in the full document and
@@ -577,182 +577,7 @@ class LLMExtractor:
             print(f"  [ERROR] Post-processing failed: {e}")
             return []
 
-    def extract_with_reasoning(
-        self, 
-        text: str, 
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> List[Guidance]:
-        """
-        Standalone extraction using the Reasoning model.
-        Uses self.reasoning_llm and self.system2prompt.
-        """
-        if not text or len(text.strip()) < 50:
-            print("  [WARN] Text too short for extraction")
-            return []
-        
-        # Smart extraction: focus on relevant sections
-        focused_text = self._extract_relevant_sections(text)
-        
-        # Final length check
-        max_chars = 200000
-        if len(focused_text) > max_chars:
-            print(f"  [WARN] Truncating focused text from {len(focused_text)} to {max_chars} chars")
-            focused_text = focused_text[:max_chars] + "\n... [truncated]"
-        
-        # Capture start time for performance tracking
-        processing_start_time = time.time()
-
-        # Retry logic for LLM calls
-        result = None
-        
-        for attempt in range(self.max_retries):
-            try:
-                # Create structured extraction program
-                program = LLMTextCompletionProgram.from_defaults(
-                    output_cls=MultiGuidanceExtraction,
-                    prompt_template_str=self.system2prompt + "\n\nDocument text:\n{text}\n\nExtract all guidance items:",
-                    llm=self.reasoning_llm,
-                    verbose=False
-                )
-                
-                # Run extraction
-                result = program(text=focused_text)
-                break  # Success!
-                
-            except Exception as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = 2 ** attempt
-                    print(f"  [RETRY] Reasoning attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    print(f"  [ERROR] All {self.max_retries} reasoning attempts failed: {e}")
-                    return []
-        
-        if not result:
-            print(f"  [ERROR] Reasoning extraction failed after {self.max_retries} attempts")
-            return []
-        
-        # Calculate duration
-        processing_duration = time.time() - processing_start_time
-
-        try:
-            guidance_items: List[Guidance] = []
-            for item in result.guidance_items:
-                # item is GuidanceExtraction (from LLM)
-                if isinstance(item, GuidanceExtraction):
-                    parsed = Guidance(**item.model_dump())
-                elif isinstance(item, dict):
-                    parsed = Guidance.parse_obj(item)
-                else:
-                    parsed = Guidance(**item.dict())
-
-                parsed.guid = uuid4().hex
-                self._attach_metadata(parsed, metadata)
-                parsed.extraction_method = "reasoning"
-
-                # Post-process: two-stage period normalization
-                # Even if reporting_period is missing, we try to infer it using the agent
-                normalized = self._normalize_period(
-                    raw_period=parsed.reporting_period or "",
-                    company=parsed.company or "",
-                    published_at=metadata.get('published_at', '') if metadata else "",
-                    statement_text=parsed.statement_text or ""
-                )
-                parsed.reporting_period = normalized
-
-                # Improve statement_text by finding it in the full document
-                st = parsed.statement_text or ""
-                if st:
-                    try:
-                        match_idx = text.lower().find(st.strip().lower())
-                        if match_idx != -1:
-                            para_start = text.rfind('\n\n', 0, match_idx)
-                            para_start = para_start + 2 if para_start != -1 else 0
-                            match_end = match_idx + len(st)
-                            para_end = text.find('\n\n', match_end)
-                            if para_end == -1: para_end = len(text)
-                            
-                            context_start = para_start
-                            if para_start > 0:
-                                prev_para_start = text.rfind('\n\n', 0, para_start - 2)
-                                prev_para_start = prev_para_start + 2 if prev_para_start != -1 else 0
-                                if (para_start - prev_para_start) < 300:
-                                    context_start = prev_para_start
-                            
-                            expanded_text = text[context_start:para_end].strip()
-                            if len(expanded_text) > 2000 or len(expanded_text) < len(st) + 50:
-                                pre = 600; post = 400
-                                start_snip = max(0, match_idx - pre)
-                                end_snip = min(len(text), match_end + post)
-                                expanded_text = text[start_snip:end_snip].strip()
-                            parsed.statement_text = expanded_text
-                    except Exception:
-                        pass
-
-                # SMART FILTER: Check if statement is predominantly historical vs forward-looking
-                statement_lower = (parsed.statement_text or "").lower()
-                forward_keywords = [
-                    r'\bexpect\w*\b', r'\bforecast\w*\b', r'\bproject\w*\b', r'\banticipat\w*\b',
-                    r'\bguidance\b', r'\boutlook\b', r'\btarget\w*\b', r'\bplan\w*\b',
-                    r'\bwill be\b', r'\bwill reach\b', r'\bwill grow\b',
-                    r'\bto be\b.*\$', r'\bfor (?:Q|FY)\d+\b'
-                ]
-                forward_score = sum(1 for pattern in forward_keywords if re.search(pattern, statement_lower))
-                strong_past_keywords = [
-                    r'\bfiscal year ended\b', r'\bquarter ended\b',
-                    r'\breported (?:revenue|earnings|income)\b',
-                    r'\bannounced.*results?\b',
-                    r'\bwas \$[\d.]+ (?:billion|million)\b',
-                    r'\bincreased \d+%\b.*\bcompared to\b'
-                ]
-                strong_past_score = sum(1 for pattern in strong_past_keywords if re.search(pattern, statement_lower))
-                
-                if strong_past_score >= 2 and forward_score == 0:
-                    print(f"  [FILTER] Rejected purely historical item: {parsed.guidance_type}")
-                    continue
-
-                guidance_items.append(parsed)
-            
-            # Deduplicate
-            if len(guidance_items) > 1:
-                deduplicated = []
-                for item in guidance_items:
-                    statement = (item.statement_text or "").strip()
-                    is_duplicate = False
-                    for existing in deduplicated:
-                        existing_statement = (existing.statement_text or "").strip()
-                        text_overlap = False
-                        if len(statement) > 50 and len(existing_statement) > 50:
-                            shorter = min(statement, existing_statement, key=len)
-                            longer = max(statement, existing_statement, key=len)
-                            overlap_ratio = len(shorter) / len(longer) if len(longer) > 0 else 0
-                            text_overlap = (overlap_ratio > 0.7 or shorter in longer)
-                        
-                        content_identical = (
-                            item.guidance_type == existing.guidance_type and
-                            item.metric_name == existing.metric_name and
-                            item.guided_range_low == existing.guided_range_low and
-                            item.guided_range_high == existing.guided_range_high
-                        )
-                        if text_overlap and content_identical:
-                            is_duplicate = True
-                            break
-                    if not is_duplicate:
-                        deduplicated.append(item)
-                guidance_items = deduplicated
-                
-            if guidance_items:
-                amortized_duration = processing_duration / len(guidance_items)
-                for item in guidance_items:
-                    item.processing_duration_seconds = round(amortized_duration, 2)
-                print(f"  [REASONING] Extracted {len(guidance_items)} guidance items")
-            else:
-                print("  [REASONING] No guidance items found")
-            return guidance_items
-
-        except Exception as e:
-            print(f"  [ERROR] Post-processing failed: {e}")
-            return []
+    # REMOVED: extract_with_reasoning (deprecated in favor of extract_from_text + agentic normalization)
 
 
 def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None, randomize: bool = False) -> List[Dict[str, Any]]:
@@ -806,21 +631,21 @@ def main():
     parser.add_argument("--random", action="store_true", help="Randomly sample max-items instead of taking the first N")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
-    parser.add_argument("--reasoning", action="store_true", help="Enable reasoning model extraction (slower but more accurate)")
+    parser.add_argument("--reasoning", action="store_true", help="Enable agentic period normalization (slower but more accurate)")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers to use")
     
     args = parser.parse_args()
 
     # If using default output path and reasoning mode is on, switch to reasoning filename
     if args.reasoning and args.output == OUTPUT_PATH:
-        args.output = OUTPUT_PATH.with_name("extracted_guidance_reasoning.jsonl")
+        args.output = OUTPUT_PATH.with_name("extracted_guidance_agentic.jsonl")
     
     print("=" * 60)
     print("LLM GUIDANCE EXTRACTION")
     print("=" * 60)
     print(f"Provider: {args.provider}")
     print(f"Model: {args.model}")
-    print(f"Mode: {'Reasoning (Standalone)' if args.reasoning else 'Standard (Single Pass)'}")
+    print(f"Mode: {'Standard + Agentic Normalization' if args.reasoning else 'Standard + Regex Normalization'}")
     print(f"Max retries: {args.max_retries}")
     print(f"Output: {args.output}")
     if args.max_items:
@@ -888,9 +713,19 @@ def main():
             )
             
             if args.reasoning:
-                guidance_items = thread_extractor.extract_with_reasoning(full_text, metadata)
+                # Standard extraction + Agentic normalization
+                guidance_items = thread_extractor.extract_from_text(
+                    full_text, 
+                    metadata,
+                    use_agentic_normalization=True
+                )
             else:
-                guidance_items = thread_extractor.extract_from_text(full_text, metadata)
+                # Standard extraction + Regex normalization only
+                guidance_items = thread_extractor.extract_from_text(
+                    full_text, 
+                    metadata,
+                    use_agentic_normalization=False
+                )
             
             records = []
             for guidance in guidance_items:

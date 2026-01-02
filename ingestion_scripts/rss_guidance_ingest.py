@@ -124,65 +124,45 @@ if __name__ == "__main__":
     args = parser.parse_args()
     sources_path = args.sources
     
-    POINTERS_8K = PROJECT_ROOT / "ingestion_json" / "pointers_8k.json"
-    POINTERS_IR = PROJECT_ROOT / "ingestion_json" / "pointers_IR.json"
+    POINTERS_PATH = PROJECT_ROOT / "ingestion_json" / "pointers.json"
 
     seen: Set[str] = set()
 
-    # Load existing pointer records from BOTH files
-    for path in [POINTERS_8K, POINTERS_IR]:
-        if path.exists():
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        ln = line.strip()
-                        if not ln:
-                            continue
-                        try:
-                            obj = json.loads(ln)
-                            uid = obj.get("uid")
-                            if uid:
-                                seen.add(uid)
-                        except Exception:
-                            continue
-            except Exception as e:
-                print(f"[WARN] Error reading {path}: {e}")
+    # Load existing pointer records
+    if POINTERS_PATH.exists():
+        try:
+            with open(POINTERS_PATH, "r", encoding="utf-8") as f:
+                for line in f:
+                    ln = line.strip()
+                    if not ln:
+                        continue
+                    try:
+                        obj = json.loads(ln)
+                        uid = obj.get("uid")
+                        if uid:
+                            seen.add(uid)
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"[WARN] Error reading {POINTERS_PATH}: {e}")
 
     # iterate feeds and collect new events
-    new_events_8k = []
-    new_events_ir = []
+    new_events = []
     
     print("Fetching feeds...")
     for ev in iter_pointer_events(sources_path, allow_all=args.allow_all):
         if ev["uid"] in seen:
             continue
         seen.add(ev["uid"])
-        
-        # Determine destination based on content
-        title = (ev.get("title") or "").lower()
-        source_id = (ev.get("source_id") or "").lower()
-        categories = [c.lower() for c in ev.get("categories") or []]
-        
-        is_8k = "8-k" in title or "8k" in source_id or any("8-k" in c for c in categories)
-        
-        if is_8k:
-            new_events_8k.append(ev)
-        else:
-            new_events_ir.append(ev)
+        new_events.append(ev)
 
-    # Append to files
-    if new_events_8k:
-        with open(POINTERS_8K, "a", encoding="utf-8") as out:
-            for ev in new_events_8k:
+    # Append to file
+    if new_events:
+        with open(POINTERS_PATH, "a", encoding="utf-8") as out:
+            for ev in new_events:
                 out.write(json.dumps(ev, ensure_ascii=False) + "\n")
-        print(f"Wrote {len(new_events_8k)} new 8-K events → {POINTERS_8K}")
+        print(f"Wrote {len(new_events)} new events → {POINTERS_PATH}")
         
-    if new_events_ir:
-        with open(POINTERS_IR, "a", encoding="utf-8") as out:
-            for ev in new_events_ir:
-                out.write(json.dumps(ev, ensure_ascii=False) + "\n")
-        print(f"Wrote {len(new_events_ir)} new IR events → {POINTERS_IR}")
-        
-    if not new_events_8k and not new_events_ir:
+    if not new_events:
         print("No new events found.")
 

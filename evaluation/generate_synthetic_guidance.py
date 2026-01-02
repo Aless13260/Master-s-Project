@@ -333,13 +333,52 @@ CEO_QUOTE_TEMPLATES = [
     '"We are {sentiment} about {topic}," said {ceo_name}. "{additional}"',
 ]
 
-FORWARD_LOOKING_PREAMBLES = [
-    "For the {period}, we expect",
+PREAMBLES_VERB = [
+    "For {period}, we expect",
     "Looking ahead to {period}, we anticipate",
+    "For {period}, the company expects",
+    "Turning to our outlook for {period}, we project",
+    "For the upcoming {period}, we forecast",
+    "As we enter {period}, we expect",
+    "We estimate for {period}",
+]
+
+PREAMBLES_NOUN = [
     "Our outlook for {period} includes",
     "We are providing guidance for {period}:",
-    "For {period}, the company expects",
+    "With respect to {period}, we are targeting",
+    "Based on current trends, our guidance for {period} is as follows:",
+    "Management anticipates {period} results to reflect",
+    "Our guidance for {period} assumes",
 ]
+
+# Natural language variations for reporting periods
+PERIOD_VARIATIONS = {
+    "quarterly": [
+        "{quarter}",                   # Q3
+        "the {quarter} quarter",       # the third quarter
+        "the {quarter} quarter of {year}", # the third quarter of 2025
+        "{quarter} {year}",            # Q3 2025
+        "the coming quarter",          # the coming quarter
+        "the next quarter",            # the next quarter
+        "the current quarter",         # the current quarter
+    ],
+    "annual": [
+        "FY{year}",                    # FY2025
+        "fiscal {year}",               # fiscal 2025
+        "fiscal year {year}",          # fiscal year 2025
+        "the full year",               # the full year
+        "the full fiscal year",        # the full fiscal year
+        "the year ending December 31, {year}", # the year ending December 31, 2025
+        "{year}",                      # 2025
+    ],
+    "multi_year": [
+        "FY{start}-FY{end}",           # FY2025-FY2027
+        "the next three years",        # the next three years
+        "the {start} to {end} period", # the 2025 to 2027 period
+        "fiscal {start} through {end}", # fiscal 2025 through 2027
+    ]
+}
 
 REVISION_TEMPLATES = [
     "We are {direction} our prior guidance for {metric} from {old_range} to {new_range}",
@@ -450,21 +489,118 @@ def generate_value_range(guidance_type: str, size_cat: str, is_range: bool, unit
         return (base, None)
 
 
-def generate_reporting_period(base_year: int, period_type: str) -> str:
-    """Generate reporting period string."""
+def generate_reporting_period(base_year: int, period_type: str) -> tuple[str, str]:
+    """Generate reporting period string with natural language variation.
+    Returns: (standard_period, natural_period)
+    """
     if period_type == "quarterly":
-        quarter = random.choice(["Q1", "Q2", "Q3", "Q4"])
-        return f"{quarter} {base_year}"
+        q_num = random.randint(1, 4)
+        quarter_short = f"Q{q_num}"
+        quarter_ordinal = ["first", "second", "third", "fourth"][q_num-1]
+        
+        standard = f"Q{q_num} FY{base_year}"
+        
+        template = random.choice(PERIOD_VARIATIONS["quarterly"])
+        natural = template.format(quarter=quarter_short, year=base_year).replace(f"the {quarter_short} quarter", f"the {quarter_ordinal} quarter")
+        return standard, natural
+        
     elif period_type == "annual":
-        return f"FY{base_year}"
+        standard = f"FY{base_year}"
+        template = random.choice(PERIOD_VARIATIONS["annual"])
+        natural = template.format(year=base_year)
+        return standard, natural
+        
     else:  # multi_year
-        return f"FY{base_year}-{base_year + 2}"
+        standard = f"FY{base_year}-FY{base_year + 2}"
+        template = random.choice(PERIOD_VARIATIONS["multi_year"])
+        natural = template.format(start=base_year, end=base_year + 2)
+        return standard, natural
 
 
 def generate_date_string(base_date: datetime, offset_days: int = 0) -> str:
     """Generate formatted date string."""
     target_date = base_date + timedelta(days=offset_days)
     return target_date.strftime("%B %d, %Y")
+
+
+def compute_published_at_for_period(standard_period: str, natural_period: str, base_year: int) -> datetime:
+    """
+    Compute a realistic published_at date that's consistent with the reporting period.
+    
+    The logic:
+    - For "current quarter" language: published IN that quarter
+    - For "next quarter" language: published in the PREVIOUS quarter
+    - For explicit periods like "Q2 FY2026": published early in that quarter or late in prior quarter
+    - For annual "FY2026": published early in the fiscal year (Q1)
+    - For multi-year: published early in the first year
+    
+    Returns a datetime in UTC timezone.
+    """
+    import re
+    
+    # Detect relative period language
+    natural_lower = natural_period.lower()
+    is_current = "current" in natural_lower
+    is_next = "next" in natural_lower or "coming" in natural_lower
+    is_full_year = "full year" in natural_lower or "full fiscal" in natural_lower
+    
+    # Parse the standard period to get quarter/year info
+    # Formats: "Q1 FY2026", "FY2026", "FY2026-FY2028"
+    q_match = re.match(r'Q(\d)\s+FY(\d{4})', standard_period)
+    fy_match = re.match(r'FY(\d{4})(?:-FY(\d{4}))?', standard_period)
+    
+    if q_match:
+        quarter = int(q_match.group(1))
+        year = int(q_match.group(2))
+        
+        # For calendar-year companies, Q1 = Jan-Mar, Q2 = Apr-Jun, etc.
+        # Quarter start months: Q1=Jan(1), Q2=Apr(4), Q3=Jul(7), Q4=Oct(10)
+        quarter_start_month = (quarter - 1) * 3 + 1
+        
+        if is_current:
+            # Published during the quarter (middle of the quarter)
+            pub_month = quarter_start_month + 1  # Middle month of quarter
+            pub_day = random.randint(10, 20)
+        elif is_next:
+            # Published in the PREVIOUS quarter
+            if quarter == 1:
+                # Previous quarter is Q4 of prior year
+                pub_month = 11  # November
+                year -= 1
+            else:
+                pub_month = quarter_start_month - 2  # Middle of previous quarter
+            pub_day = random.randint(10, 25)
+        else:
+            # Explicit period - published near the start of that quarter
+            # (e.g., earnings release at start of quarter with forward guidance)
+            pub_month = quarter_start_month
+            pub_day = random.randint(5, 20)
+        
+        # Handle month overflow
+        if pub_month > 12:
+            pub_month -= 12
+            year += 1
+        elif pub_month < 1:
+            pub_month += 12
+            year -= 1
+            
+        return datetime(year, pub_month, pub_day, tzinfo=timezone.utc)
+    
+    elif fy_match:
+        year = int(fy_match.group(1))
+        
+        if is_full_year:
+            # "Full year" language - published mid-year with annual outlook
+            pub_month = random.randint(4, 8)
+        else:
+            # Annual guidance typically given early in fiscal year (Q1)
+            pub_month = random.randint(1, 3)
+        
+        pub_day = random.randint(10, 25)
+        return datetime(year, pub_month, pub_day, tzinfo=timezone.utc)
+    
+    # Fallback: use base_year with random date in Q1
+    return datetime(base_year, random.randint(1, 3), random.randint(10, 25), tzinfo=timezone.utc)
 
 
 def select_random_ceo_name() -> tuple:
@@ -566,7 +702,8 @@ Example format:
         
         # Build context about the guidance
         metric = guidance_item.get("metric_name", "revenue")
-        period = guidance_item.get("reporting_period", "FY2025")
+        # Use natural language period for text generation if available, else fallback to standard
+        period = guidance_item.get("original_period_text") or guidance_item.get("reporting_period", "FY2025")
         low = guidance_item.get("guided_range_low")
         high = guidance_item.get("guided_range_high")
         unit = guidance_item.get("unit", "")
@@ -624,12 +761,46 @@ Example: "For fiscal year 2025, we expect total revenue to be in the range of $4
         
         # Fallback to simple template
         if not result:
+            # Handle metric casing - Use as is
+            metric_display = metric
+            
             if qualitative:
-                return f"We expect {metric} to {qualitative} {rationale}."
-            elif high:
-                return f"For {period}, we expect {metric} to be in the range of ${low} to ${high} {unit}."
+                preamble = random.choice(PREAMBLES_VERB).format(period=period)
+                stmt = f"{preamble} {metric_display} to {qualitative} {rationale}."
+                return stmt.replace("upcoming the", "upcoming")
+            
+            # Quantitative
+            use_verb_structure = random.choice([True, False])
+            
+            if use_verb_structure:
+                preamble = random.choice(PREAMBLES_VERB).format(period=period)
+                verb = random.choice(["to be", "to come in at", "to reach"])
+                connector = verb
             else:
-                return f"For {period}, we expect {metric} to be approximately ${low} {unit}."
+                preamble = random.choice(PREAMBLES_NOUN).format(period=period)
+                connector = "of"
+
+            if high and high != low:
+                range_str = f"${low} to ${high} {unit}"
+                if use_verb_structure:
+                    if "come in at" in connector:
+                        phrase = random.choice([
+                            f"{connector} between {range_str}",
+                            f"{connector} {range_str}"
+                        ])
+                    else:
+                        phrase = random.choice([
+                            f"{connector} in the range of {range_str}",
+                            f"{connector} between {range_str}"
+                        ])
+                else:
+                    phrase = f"{connector} {range_str}"
+            else:
+                val_str = f"${low} {unit}"
+                phrase = f"{connector} approximately {val_str}"
+            
+            stmt = f"{preamble} {metric_display} {phrase}."
+            return stmt.replace("upcoming the", "upcoming")
         
         return result.strip('"').strip()
     
@@ -732,12 +903,17 @@ Example: "We expect to complete the renovation of our Austin manufacturing facil
 
 @dataclass
 class SyntheticGuidanceItem:
-    """Single guidance statement matching the schema."""
+    """Single guidance statement matching the schema.
+    
+    Note: Document-level metadata (source_url, published_at, ingested_at) are stored
+    at the document level (SyntheticDocument), not duplicated per guidance item.
+    """
     guid: str = field(default_factory=lambda: uuid4().hex)
     company: Optional[str] = None
     guidance_type: Optional[str] = None
     metric_name: Optional[str] = None
     reporting_period: Optional[str] = None
+    original_period_text: Optional[str] = None  # Natural language version used in text
     current_value: Optional[float] = None
     unit: Optional[str] = None
     guided_range_low: Optional[float] = None
@@ -746,18 +922,11 @@ class SyntheticGuidanceItem:
     revision_direction: Optional[str] = None
     qualitative_direction: Optional[str] = None
     rationales: Optional[str] = None
-    source_url: Optional[str] = None
     source_type: str = "8-K"
-    published_at: Optional[str] = None
-    ingested_at: Optional[str] = None
     extracted_at: Optional[str] = None
     processing_duration_seconds: Optional[float] = None
     extraction_method: str = "synthetic"
-    agentic_review_comment: Optional[str] = None
     was_updated_by_agent: bool = False
-    sentiment_label: Optional[str] = None
-    sentiment_score: Optional[float] = None
-    risk_factors: Optional[str] = None
 
 
 @dataclass
@@ -770,6 +939,8 @@ class SyntheticDocument:
     full_text_snippet: str
     gold_standard_guidance: list
     synthetic_metadata: dict  # Extra info about generation
+    company_name: str = ""  # Company name for extraction
+    published_at: str = ""  # ISO format publication date
     manual_verification_status: str = "synthetic"
     manual_notes: str = ""
 
@@ -827,13 +998,14 @@ class SyntheticGuidanceGenerator:
         unit = random.choice(template.get("units", [None]))
         
         size_cat = get_company_size_category(company["revenue_scale"])
-        reporting_period = generate_reporting_period(self.base_year, period_type)
+        standard_period, natural_period = generate_reporting_period(self.base_year, period_type)
         
         item = SyntheticGuidanceItem(
             company=company["name"],
             guidance_type=guidance_type,
             metric_name=metric_name,
-            reporting_period=reporting_period,
+            reporting_period=standard_period,
+            original_period_text=natural_period,
             source_type="8-K",
             extracted_at=self.base_date.isoformat(),
         )
@@ -1014,14 +1186,58 @@ Exhibit 99.1
         if guidance_items:
             guidance_statements = []
             for item in guidance_items:
-                if item.qualitative_direction:
-                    stmt = f"• {item.metric_name.title()} is expected to {item.qualitative_direction}"
-                    if item.rationales:
-                        stmt += f", {item.rationales}"
-                elif item.guided_range_high:
-                    stmt = f"• {item.metric_name.title()} for {item.reporting_period} is expected to be in the range of ${item.guided_range_low:.2f} to ${item.guided_range_high:.2f} {item.unit or ''}"
+                # Handle metric casing - Use as is since generator provides good casing
+                metric_display = item.metric_name
+                
+                # Use natural language period for text generation if available
+                period = item.original_period_text or item.reporting_period
+                low = item.guided_range_low
+                high = item.guided_range_high
+                unit = item.unit or ''
+                qualitative = item.qualitative_direction
+                rationale = item.rationales
+                
+                if qualitative:
+                    preamble = random.choice(PREAMBLES_VERB).format(period=period)
+                    stmt = f"• {preamble} {metric_display} to {qualitative}"
+                    if rationale:
+                        stmt += f", {rationale}"
                 else:
-                    stmt = f"• {item.metric_name.title()} for {item.reporting_period} is expected to be approximately ${item.guided_range_low:.2f} {item.unit or ''}"
+                    # Quantitative
+                    use_verb_structure = random.choice([True, False])
+                    
+                    if use_verb_structure:
+                        preamble = random.choice(PREAMBLES_VERB).format(period=period)
+                        verb = random.choice(["to be", "to come in at", "to reach"])
+                        connector = verb
+                    else:
+                        preamble = random.choice(PREAMBLES_NOUN).format(period=period)
+                        connector = "of"
+
+                    if high and high != low:
+                        range_str = f"${low:.2f} to ${high:.2f} {unit}"
+                        if use_verb_structure:
+                            # Avoid "come in at in the range of"
+                            if "come in at" in connector:
+                                phrase = random.choice([
+                                    f"{connector} between {range_str}",
+                                    f"{connector} {range_str}"
+                                ])
+                            else:
+                                phrase = random.choice([
+                                    f"{connector} in the range of {range_str}",
+                                    f"{connector} between {range_str}"
+                                ])
+                        else:
+                            phrase = f"{connector} {range_str}"
+                    else:
+                        val_str = f"${low:.2f} {unit}"
+                        phrase = f"{connector} approximately {val_str}"
+                    
+                    stmt = f"• {preamble} {metric_display} {phrase}"
+                
+                # Fix grammar issues with "the"
+                stmt = stmt.replace("upcoming the", "upcoming")
                 
                 if item.is_revision:
                     stmt += f" ({item.revision_direction} from prior guidance)"
@@ -1080,6 +1296,7 @@ Exhibit 99.1
         has_too_specific_fls = random.random() < self.config["prob_too_specific_fls"]
         
         guidance_items = []
+        document_published_at = None  # Will be set based on first guidance item
         
         if has_guidance:
             # Determine number of guidance items
@@ -1108,7 +1325,26 @@ Exhibit 99.1
                     is_revision=is_revision,
                     period_type=period_type,
                 )
+                
+                # Compute published_at based on the period (first item sets document date)
+                if document_published_at is None:
+                    document_published_at = compute_published_at_for_period(
+                        item.reporting_period,
+                        item.original_period_text or item.reporting_period,
+                        self.base_year
+                    )
+                
+                # Note: published_at is stored at document level, not per guidance item
+                
                 guidance_items.append(item)
+        else:
+            # No guidance - still need a publication date for the document
+            document_published_at = datetime(
+                self.base_year, 
+                random.randint(1, 12), 
+                random.randint(5, 25), 
+                tzinfo=timezone.utc
+            )
         
         # Generate press release text
         full_text = self._generate_press_release_text(
@@ -1132,9 +1368,11 @@ Exhibit 99.1
                 "company": company,
                 "has_too_specific_fls": has_too_specific_fls,
                 "generation_timestamp": self.base_date.isoformat(),
-                "generator_version": "1.1.0",
+                "generator_version": "1.2.0",  # Version bump for published_at support
                 "llm_augmented": self.use_llm,
             },
+            company_name=company["name"],
+            published_at=document_published_at.isoformat() if document_published_at else "",
         )
         
         return doc

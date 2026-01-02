@@ -74,16 +74,11 @@ def create_tables(conn):
             qualitative_direction TEXT,
             rationales TEXT,
             statement_text TEXT,
-            published_at TEXT,
-            ingested_at TEXT,
+            source_type TEXT,
             extracted_at TEXT,
             extraction_method TEXT,
-            agentic_review_comment TEXT,
-            sentiment_label TEXT,
-            sentiment_score REAL,
-            risk_factors TEXT,
             processing_duration_seconds REAL,
-            source_url TEXT,
+            was_updated_by_agent BOOLEAN,
             FOREIGN KEY(content_uid) REFERENCES contents(uid)
         )
     ''')
@@ -197,15 +192,12 @@ def migrate_guidance(conn, file_path):
                         reporting_period, current_value, unit, 
                         guided_range_low, guided_range_high, 
                         is_revision, revision_direction, qualitative_direction, rationales,
-                        statement_text,
-                        published_at, ingested_at, extracted_at,
-                        extraction_method, agentic_review_comment,
-                        sentiment_label, sentiment_score, risk_factors, processing_duration_seconds,
-                        source_url
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        statement_text, source_type, extracted_at,
+                        extraction_method, processing_duration_seconds, was_updated_by_agent
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     guid_id,
-                    row_uid, # content_uid comes from the top level 'uid'
+                    row_uid,  # content_uid comes from the top level 'uid'
                     row.get('source_id'),
                     g.get('company'),
                     g.get('guidance_type'),
@@ -220,16 +212,11 @@ def migrate_guidance(conn, file_path):
                     g.get('qualitative_direction'),
                     g.get('rationales'),
                     g.get('statement_text'),
-                    g.get('published_at'),
-                    g.get('ingested_at'),
+                    g.get('source_type'),
                     g.get('extracted_at'),
-                    g.get('extraction_method', 'standard'), # Default to 'standard' if missing
-                    g.get('agentic_review_comment') if g.get('extraction_method') == 'reasoning' else None,
-                    g.get('sentiment_label'),
-                    g.get('sentiment_score'),
-                    g.get('risk_factors'),
+                    g.get('extraction_method', 'standard'),  # Default to 'standard' if missing
                     g.get('processing_duration_seconds'),
-                    row.get('source_url')  # source_url is at top level of row
+                    g.get('was_updated_by_agent', False)
                 ))
                 count += 1
             except Exception as e:

@@ -29,7 +29,7 @@ class GuidanceExtraction(BaseModel):
 
     # Quantitative data
     current_value: Optional[float] = None
-    unit: Optional[Literal["USD", "EUR", "GBP", "%", "million", "billion", "units", "other"]] = None
+    unit: Optional[Literal["USD", "%", "million", "billion", "units", "other"]] = None
     # guided_value removed in favor of using guided_range_low for single values
     guided_range_low: Optional[float] = None
     guided_range_high: Optional[float] = None
@@ -48,34 +48,22 @@ class Guidance(GuidanceExtraction):
     """Full guidance model including metadata. Mirrors the previous dataclass fields.
 
     This model is used for storage and analysis.
+    
+    Note: Document-level metadata (source_url, published_at, ingested_at) are stored
+    at the document level in contents.jsonl, not duplicated per guidance item.
     """
     guid: str = Field(default_factory=lambda: uuid4().hex)
     company: Optional[str] = None
     # NOTE: ticker removed to reduce complexity; can be added later via mapping
 
-    # Metadata
-    source_url: Optional[str] = None
+    # Source classification
     source_type: Optional[Literal["8-K", "10-K", "10-Q", "press_release", "earnings_call", "investor_presentation", "other"]] = None
     
-    # Dates
-    published_at: Optional[str] = None  # When the document was published by the source
-    ingested_at: Optional[str] = None   # When the document was fetched/ingested by our system
+    # Extraction metadata
     extracted_at: Optional[str] = None  # When this guidance item was extracted (output created)
-    
-    # Performance metrics
-    processing_duration_seconds: Optional[float] = None # Time taken for LLM processing in seconds
-
-    # Track which pipeline stage produced this item (for research comparison)
+    processing_duration_seconds: Optional[float] = None  # Time taken for LLM processing in seconds
     extraction_method: Optional[Literal["standard", "agentic_review"]] = "standard"
-    
-    # Agentic review details (for debugging/analysis)
-    agentic_review_comment: Optional[str] = None
     was_updated_by_agent: Optional[bool] = False
-    
-    # Agentic Enrichment (New for Thesis)
-    sentiment_label: Optional[Literal["positive", "negative", "neutral", "cautious", "optimistic"]] = None
-    sentiment_score: Optional[float] = None # 0.0 to 1.0 (0=Bearish, 1=Bullish)
-    risk_factors: Optional[str] = None # Comma-separated list of risks mentioned (e.g. "FX, Supply Chain")
 
     @field_validator("guid", mode="before")
     @classmethod
