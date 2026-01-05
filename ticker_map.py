@@ -2,37 +2,166 @@
 import yaml
 from pathlib import Path
 
+# Ticker to full company name mapping
+TICKER_TO_NAME = {
+    "AAPL": "Apple Inc.",
+    "MSFT": "Microsoft Corporation",
+    "GOOGL": "Alphabet Inc.",
+    "GOOG": "Alphabet Inc.",
+    "AMZN": "Amazon.com Inc.",
+    "META": "Meta Platforms Inc.",
+    "NVDA": "NVIDIA Corporation",
+    "TSLA": "Tesla Inc.",
+    "AMD": "Advanced Micro Devices Inc.",
+    "INTC": "Intel Corporation",
+    "CRM": "Salesforce Inc.",
+    "ORCL": "Oracle Corporation",
+    "NFLX": "Netflix Inc.",
+    "ADBE": "Adobe Inc.",
+    "PYPL": "PayPal Holdings Inc.",
+    "CSCO": "Cisco Systems Inc.",
+    "IBM": "IBM Corporation",
+    "QCOM": "Qualcomm Inc.",
+    "TXN": "Texas Instruments Inc.",
+    "AVGO": "Broadcom Inc.",
+    "NOW": "ServiceNow Inc.",
+    "SNOW": "Snowflake Inc.",
+    "UBER": "Uber Technologies Inc.",
+    "LYFT": "Lyft Inc.",
+    "SQ": "Block Inc.",
+    "SHOP": "Shopify Inc.",
+    "ZM": "Zoom Video Communications Inc.",
+    "DOCU": "DocuSign Inc.",
+    "CRWD": "CrowdStrike Holdings Inc.",
+    "ZS": "Zscaler Inc.",
+    "PANW": "Palo Alto Networks Inc.",
+    "FTNT": "Fortinet Inc.",
+    "DDOG": "Datadog Inc.",
+    "MDB": "MongoDB Inc.",
+    "NET": "Cloudflare Inc.",
+    "PLTR": "Palantir Technologies Inc.",
+    "PATH": "UiPath Inc.",
+    "U": "Unity Software Inc.",
+    "RBLX": "Roblox Corporation",
+    "COIN": "Coinbase Global Inc.",
+    "HOOD": "Robinhood Markets Inc.",
+    "ABNB": "Airbnb Inc.",
+    "DASH": "DoorDash Inc.",
+    "PINS": "Pinterest Inc.",
+    "SNAP": "Snap Inc.",
+    "TWLO": "Twilio Inc.",
+    "OKTA": "Okta Inc.",
+    "WDAY": "Workday Inc.",
+    "SPLK": "Splunk Inc.",
+    "TEAM": "Atlassian Corporation",
+    "VEEV": "Veeva Systems Inc.",
+    "ANSS": "ANSYS Inc.",
+    "CDNS": "Cadence Design Systems Inc.",
+    "SNPS": "Synopsys Inc.",
+    "KLAC": "KLA Corporation",
+    "LRCX": "Lam Research Corporation",
+    "AMAT": "Applied Materials Inc.",
+    "ASML": "ASML Holding N.V.",
+    "MU": "Micron Technology Inc.",
+    "WDC": "Western Digital Corporation",
+    "STX": "Seagate Technology Holdings",
+    "HPQ": "HP Inc.",
+    "HPE": "Hewlett Packard Enterprise",
+    "DELL": "Dell Technologies Inc.",
+    "NTAP": "NetApp Inc.",
+    "VMW": "VMware Inc.",
+    "CTSH": "Cognizant Technology Solutions",
+    "INFY": "Infosys Limited",
+    "WIT": "Wipro Limited",
+    "ACN": "Accenture plc",
+    "IT": "Gartner Inc.",
+    "EPAM": "EPAM Systems Inc.",
+    "GDDY": "GoDaddy Inc.",
+    "AKAM": "Akamai Technologies Inc.",
+    "FFIV": "F5 Inc.",
+    "JNPR": "Juniper Networks Inc.",
+    "KEYS": "Keysight Technologies Inc.",
+    "TEL": "TE Connectivity Ltd.",
+    "GLW": "Corning Incorporated",
+    "APH": "Amphenol Corporation",
+    "FIS": "Fidelity National Information Services",
+    "FISV": "Fiserv Inc.",
+    "GPN": "Global Payments Inc.",
+    "ADP": "Automatic Data Processing Inc.",
+    "PAYX": "Paychex Inc.",
+    "INTU": "Intuit Inc.",
+    "ADSK": "Autodesk Inc.",
+    "PTC": "PTC Inc.",
+    "MANH": "Manhattan Associates Inc.",
+    "TYL": "Tyler Technologies Inc.",
+    "CDAY": "Ceridian HCM Holding Inc.",
+    "PAYC": "Paycom Software Inc.",
+    "PCTY": "Paylocity Holding Corporation",
+    "BKI": "Black Knight Inc.",
+    "SSNC": "SS&C Technologies Holdings",
+    "JKHY": "Jack Henry & Associates Inc.",
+    "BR": "Broadridge Financial Solutions",
+    "SEIC": "SEI Investments Company",
+    "WEX": "WEX Inc.",
+    "MA": "Mastercard Incorporated",
+    "V": "Visa Inc.",
+    "AXP": "American Express Company",
+    "DIS": "The Walt Disney Company",
+    "CMCSA": "Comcast Corporation",
+    "VZ": "Verizon Communications Inc.",
+    "T": "AT&T Inc.",
+    "TMUS": "T-Mobile US Inc.",
+    "CHTR": "Charter Communications Inc.",
+    "NWSA": "News Corporation",
+    "FOX": "Fox Corporation",
+    "PARA": "Paramount Global",
+    "WBD": "Warner Bros. Discovery Inc.",
+    "LYV": "Live Nation Entertainment Inc.",
+    "SPOT": "Spotify Technology S.A.",
+    "EA": "Electronic Arts Inc.",
+    "TTWO": "Take-Two Interactive Software",
+    "ATVI": "Activision Blizzard Inc.",
+    "MTCH": "Match Group Inc.",
+    "IAC": "IAC Inc.",
+    "BKNG": "Booking Holdings Inc.",
+    "EXPE": "Expedia Group Inc.",
+    "TRIP": "TripAdvisor Inc.",
+    "ETSY": "Etsy Inc.",
+    "EBAY": "eBay Inc.",
+    "MELI": "MercadoLibre Inc.",
+    "SE": "Sea Limited",
+    "JD": "JD.com Inc.",
+    "PDD": "PDD Holdings Inc.",
+    "BABA": "Alibaba Group Holding",
+    "BIDU": "Baidu Inc.",
+    "NTES": "NetEase Inc.",
+    "BILI": "Bilibili Inc.",
+    "TME": "Tencent Music Entertainment",
+    "IQ": "iQIYI Inc.",
+    "VIPS": "Vipshop Holdings Limited",
+    "WB": "Weibo Corporation",
+    "ZTO": "ZTO Express Inc.",
+    "BEKE": "KE Holdings Inc.",
+    "LI": "Li Auto Inc.",
+    "NIO": "NIO Inc.",
+    "XPEV": "XPeng Inc.",
+    "RIVN": "Rivian Automotive Inc.",
+    "LCID": "Lucid Group Inc.",
+    "F": "Ford Motor Company",
+    "GM": "General Motors Company",
+    "TM": "Toyota Motor Corporation",
+    "HMC": "Honda Motor Co. Ltd.",
+    "RACE": "Ferrari N.V.",
+    "STLA": "Stellantis N.V.",
+    "EW": "Edwards Lifesciences Corporation",
+}
+
+
 def load_ticker_map(sources_path="sources.yaml"):
     """
-    Loads sources.yaml and creates a mapping from source_id (e.g., 'msft_8k') 
-    to a clean company name (e.g., 'Microsoft').
+    Loads sources.yaml and creates a mapping from ticker (e.g., 'MSFT') 
+    to full company name (e.g., 'Microsoft Corporation').
+    
+    Returns the TICKER_TO_NAME dictionary directly.
     """
-    mapping = {}
-    try:
-        with open(sources_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-            
-        for feed in data.get("feeds", []):
-            sid = feed.get("id")
-            if not sid:
-                continue
-                
-            # Heuristic: Extract ticker from ID (e.g., 'msft_8k' -> 'MSFT')
-            # You can also add a 'company_name' field to your YAML in the future for better accuracy
-            parts = sid.split('_')
-            ticker = parts[0].upper()
-            
-            # Basic manual overrides for common ones if needed, 
-            # otherwise default to Ticker
-            company_name = ticker
-            
-            # If you want to map tickers to full names, you could add a dictionary here
-            # e.g. {'MSFT': 'Microsoft', 'AAPL': 'Apple', ...}
-            # For now, we'll just use the Ticker as the Company Name which is standard in finance
-            
-            mapping[sid] = company_name
-            
-    except Exception as e:
-        print(f"[WARN] Failed to load ticker map: {e}")
-        
-    return mapping
+    return TICKER_TO_NAME

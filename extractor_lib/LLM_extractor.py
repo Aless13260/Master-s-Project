@@ -145,15 +145,14 @@ class LLMExtractor:
         Look for forward-looking verbs: expects, guidance, outlook, forecast, projects, anticipates, targets, will be, plans to
         REJECT operational metrics: headcount, employees, roles, team size, users, subscribers (unless explicitly revenue-related)
 
-        You will extract guidance on financial statement items (revenue, earnings, etc.) and key operational metrics that directly
-        impact financial performance (e.g., AOV for marketplaces, subscriber growth for SaaS). Purely qualitative commentary without clear financial linkage is excluded.
+        Purely qualitative commentary without clear financial linkage is excluded.
         
         Category definitions for financial guidance extraction:
 
         - revenue: Dollar-denominated sales figures (net sales, total revenue, segment revenue). Not unit volumes or delivery counts.
         - earnings: Net income, profit, operating income, or other profit-line metrics in dollar terms.
         - EPS: Earnings per share, explicitly stated as a per-share figure.
-        - opex: Operating expenses, SG&A, R&D spend, or other cost-line items. Includes expense growth guidance.
+        - opex: Operating expenses, at the company or major segment level (total opex, total expenses, SG&A). Requires explicit $ amount. Do not extract granular line-item expenses (e.g., depreciation, payroll, infrastructure costs) unless they represent a material portion of total expenses.
         - capex: Capital expenditures, infrastructure investment, property/equipment spending.
         - margin: Percentage-based profitability metrics (gross margin, operating margin, net margin, profit margin).
         - cash_flow: Operating cash flow, free cash flow, or general cash flow guidance in dollar terms.
@@ -239,39 +238,31 @@ class LLMExtractor:
         return result if result else None
 
     def _attach_metadata(self, item: Guidance, metadata: Optional[Dict[str, Any]]) -> None:
-        """Attach metadata to a Guidance item.
-        
-        Note: Document-level metadata (source_url, published_at, ingested_at) are stored
-        at the document level, not duplicated per guidance item.
-        """
+        """Attach metadata to a Guidance item."""
         if not metadata:
             return
 
-        # Set extraction time (now)
         item.extracted_at = datetime.now(timezone.utc).isoformat()
 
-        # Auto-fill Company Name (priority: extracted > metadata > source_id map)
-        if not item.company:
-            if metadata.get("company_name"):
-                item.company = metadata.get("company_name")
-            elif metadata.get("source_id") and metadata.get("source_id") in COMPANY_MAP:
-                item.company = COMPANY_MAP[metadata.get("source_id")]
-
+        # Standardize company name: parse ticker from source_id, map to full name
         if metadata.get("source_id"):
-            sid = str(metadata.get("source_id")).lower()
+            sid = str(metadata.get("source_id"))
+            ticker = sid.split('_')[0].upper()  # e.g. "msft_8k" -> "MSFT"
+            item.company = COMPANY_MAP.get(ticker, ticker)  # Fallback to ticker if not in map
             
             # Map source_type based on source_id
-            if "8-k" in sid or "8k" in sid:
+            sid_lower = sid.lower()
+            if "8-k" in sid_lower or "8k" in sid_lower:
                 item.source_type = "8-K"
-            elif "10-k" in sid or "10k" in sid:
+            elif "10-k" in sid_lower or "10k" in sid_lower:
                 item.source_type = "10-K"
-            elif "10-q" in sid or "10q" in sid:
+            elif "10-q" in sid_lower or "10q" in sid_lower:
                 item.source_type = "10-Q"
-            elif "press" in sid or "release" in sid:
+            elif "press" in sid_lower or "release" in sid_lower:
                 item.source_type = "press_release"
-            elif "call" in sid or "transcript" in sid:
+            elif "call" in sid_lower or "transcript" in sid_lower:
                 item.source_type = "earnings_call"
-            elif "presentation" in sid:
+            elif "presentation" in sid_lower:
                 item.source_type = "investor_presentation"
             else:
                 item.source_type = "other"
@@ -520,41 +511,32 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                         pass
                 guidance_items.append(parsed)
             
-            # Deduplicate: Remove items with highly overlapping statement_text AND similar content
-            # This happens when LLM extracts the same guidance multiple times from one section
-            # CRITICAL: Only deduplicate if BOTH text overlaps AND guidance content is identical
+            # Deduplicate: Remove items with same numeric values for same type/period
+            # If the numbers are exactly the same, it's almost certainly the same guidance
             if len(guidance_items) > 1:
                 deduplicated = []
                 
                 for item in guidance_items:
-                    statement = (item.statement_text or "").strip()
-                    
-                    # Check if this is a true duplicate (same content, not just same source text)
+                    # Check if this is a duplicate based on numbers + type + period
                     is_duplicate = False
                     for existing in deduplicated:
-                        existing_statement = (existing.statement_text or "").strip()
-                        
-                        # First check: do the statements significantly overlap?
-                        text_overlap = False
-                        if len(statement) > 50 and len(existing_statement) > 50:
-                            shorter = min(statement, existing_statement, key=len)
-                            longer = max(statement, existing_statement, key=len)
-                            overlap_ratio = len(shorter) / len(longer) if len(longer) > 0 else 0
-                            text_overlap = (overlap_ratio > 0.7 or shorter in longer)
-                        
-                        # Second check: is the guidance content identical?
-                        # Compare guidance_type, metric_name, and numeric values
-                        content_identical = (
+                        # Same guidance_type and reporting_period
+                        same_type_period = (
                             item.guidance_type == existing.guidance_type and
-                            item.metric_name == existing.metric_name and
-                            item.guided_range_low == existing.guided_range_low and
-                            item.guided_range_high == existing.guided_range_high
+                            item.reporting_period == existing.reporting_period
                         )
                         
-                        # Only mark as duplicate if BOTH conditions are true
-                        if text_overlap and content_identical:
+                        # Same numeric values (all three must match)
+                        same_numbers = (
+                            item.guided_range_low == existing.guided_range_low and
+                            item.guided_range_high == existing.guided_range_high and
+                            item.current_value == existing.current_value
+                        )
+                        
+                        # If same type/period AND same numbers, it's a duplicate
+                        if same_type_period and same_numbers:
                             is_duplicate = True
-                            print(f"  [DEDUP] Skipped duplicate: {item.guidance_type} with same values")
+                            print(f"  [DEDUP] Skipped duplicate: {item.guidance_type} {item.reporting_period} with same values")
                             break
                     
                     if not is_duplicate:
