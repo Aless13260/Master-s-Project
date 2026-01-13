@@ -12,7 +12,7 @@ DB_PATH = BASE_DIR / "finance_data.db"
 CONTENTS_PATH = BASE_DIR / "ingestion_json" / "contents.jsonl"
 CANDIDATES_PATH = BASE_DIR / "extractor_lib" / "candidate_guidance.jsonl"
 GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance.jsonl"
-REASONING_GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance_reasoning.jsonl"
+AGENTIC_GUIDANCE_PATH = BASE_DIR / "extractor_lib" / "extracted_guidance_agentic.jsonl"
 
 def drop_tables(conn):
     c = conn.cursor()
@@ -61,7 +61,7 @@ def create_tables(conn):
             guid TEXT PRIMARY KEY,
             content_uid TEXT,
             source_id TEXT,
-            company TEXT,
+            ticker TEXT,
             guidance_type TEXT,
             metric_name TEXT,
             reporting_period TEXT,
@@ -188,7 +188,7 @@ def migrate_guidance(conn, file_path):
 
                 c.execute('''
                     INSERT OR REPLACE INTO guidance (
-                        guid, content_uid, source_id, company, guidance_type, metric_name,
+                        guid, content_uid, source_id, ticker, guidance_type, metric_name,
                         reporting_period, current_value, unit, 
                         guided_range_low, guided_range_high, 
                         is_revision, revision_direction, qualitative_direction, rationales,
@@ -199,7 +199,7 @@ def migrate_guidance(conn, file_path):
                     guid_id,
                     row_uid,  # content_uid comes from the top level 'uid'
                     row.get('source_id'),
-                    g.get('company'),
+                    g.get('ticker'),
                     g.get('guidance_type'),
                     g.get('metric_name'),
                     g.get('reporting_period'),
@@ -227,6 +227,7 @@ def migrate_guidance(conn, file_path):
 def main():
     parser = argparse.ArgumentParser(description="Migrate JSONL data to SQLite")
     parser.add_argument("--refresh", action="store_true", help="Drop existing tables and start fresh")
+    parser.add_argument("--reasoning", action="store_true", help="Use agentic extraction output only")
     args = parser.parse_args()
 
     print(f"Creating/Connecting to database: {DB_PATH}")
@@ -240,8 +241,17 @@ def main():
         create_tables(conn)
         migrate_contents(conn)
         migrate_candidates(conn)
-        migrate_guidance(conn, GUIDANCE_PATH)
-        migrate_guidance(conn, REASONING_GUIDANCE_PATH)
+        
+        # Migrate guidance from selected source
+        if args.reasoning:
+            print("Using agentic extraction output...")
+            migrate_guidance(conn, AGENTIC_GUIDANCE_PATH)
+        else:
+            migrate_guidance(conn, GUIDANCE_PATH)
+            # Also try agentic if it exists
+            if AGENTIC_GUIDANCE_PATH.exists():
+                migrate_guidance(conn, AGENTIC_GUIDANCE_PATH)
+        
         print("\nMigration Complete!")
         print(f"You can now open '{DB_PATH.name}' with any SQLite viewer.")
     finally:

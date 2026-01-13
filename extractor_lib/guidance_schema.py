@@ -53,8 +53,7 @@ class Guidance(GuidanceExtraction):
     at the document level in contents.jsonl, not duplicated per guidance item.
     """
     guid: str = Field(default_factory=lambda: uuid4().hex)
-    company: Optional[str] = None
-    # NOTE: ticker removed to reduce complexity; can be added later via mapping
+    ticker: Optional[str] = None  # Stock ticker symbol (e.g., AAPL, MSFT)
 
     # Source classification
     source_type: Optional[Literal["8-K", "10-K", "10-Q", "press_release", "earnings_call", "investor_presentation", "other"]] = None

@@ -56,6 +56,8 @@ def main():
     cmd = f'"{python_exe}" migrate_to_sqlite.py'
     if args.refresh_db:
         cmd += " --refresh"
+    if args.reasoning:
+        cmd += " --reasoning"
     run_step(cmd, "Migrating to SQLite Database")
 
     print("\n" + "="*60)

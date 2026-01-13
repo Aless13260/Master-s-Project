@@ -31,8 +31,8 @@ UA = "AgenticFinanceResearchBot/0.1 (contact: aless13260@gmail.com)"
 MIN_CONTENT_LENGTH = 300  # Skip content shorter than this (likely image-only or empty)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-POINTERS_PATH = PROJECT_ROOT / "ingestion_json" / "pointers_8k.json"
-OUT_PATH = PROJECT_ROOT / "ingestion_json" / "contents_8k.jsonl"
+POINTERS_PATH = PROJECT_ROOT / "ingestion_json" / "pointers.json"
+OUT_PATH = PROJECT_ROOT / "ingestion_json" / "contents.jsonl"
 CACHE_PATH = PROJECT_ROOT / "ingestion_json" / "fetch_cache.json"
 
 
@@ -354,38 +354,25 @@ def main(
                 html_hash = None
 
             # If we've seen this exact HTML before, map to existing content if available and skip re-extraction
-            mapped_content_hash = None
             if not no_cache and html_hash and html_hash in cache.get("html_to_content", {}):
-                mapped_content_hash = cache["html_to_content"][html_hash]
-                meta = cache.get("content_meta", {}).get(mapped_content_hash)
+                content_hash = cache["html_to_content"][html_hash]
+                meta = cache.get("content_meta", {}).get(content_hash)
                 if meta:
                     # Write a duplicate record pointing to existing content
                     item["fetch_status"] = "duplicate_html_skipped"
                     item["extracted_text"] = None
                     item["duplicate_of"] = meta.get("uid")
-                    item["content_hash"] = mapped_content_hash
+                    item["content_hash"] = content_hash
                     out.write(json.dumps(item, ensure_ascii=False) + "\n")
                     added += 1
                     seen.add(uid)
-                    # persist cache and continue (only if caching enabled)
-                    if not no_cache:
-                        try:
-                            with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=chosen_cache.parent) as tf:
-                                json.dump(cache, tf, ensure_ascii=False)
-                                tmpname = tf.name
-                            os.replace(tmpname, chosen_cache)
-                        except Exception:
-                            pass
-                    # polite short delay
                     time.sleep(delay)
                     continue
 
             html = resp.text
 
-            # Track any discovered PDF links in the resolved content.
-            discovered_pdf_links: list[str] = []
-
             # If this is an SEC EDGAR index page (8-K, 10-Q, etc.), try to find and follow the Exhibit 99 link
+            discovered_pdf_links: list[str] = []
             if "sec.gov" in link.lower() and "Archives/edgar" in link:
                 exhibit_url = find_exhibit_from_index(html, link)
                 
@@ -442,8 +429,7 @@ def main(
                     continue
 
             if text:
-                # If we already marked this as pdf_links_found above, preserve it.
-                if item.get("fetch_status") not in ("pdf_links_found",):
+                if item["fetch_status"] != "pdf_links_found":
                     item["fetch_status"] = "ok"
                 item["extracted_text"] = text
             else:
@@ -482,20 +468,20 @@ def main(
                 if html_hash and not no_cache:
                     cache.setdefault("html_to_content", {})[html_hash] = content_hash
 
-            # persist cache after each processed pointer (best-effort)
-            if not no_cache:
-                try:
-                    with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=chosen_cache.parent) as tf:
-                        json.dump(cache, tf, ensure_ascii=False)
-                        tmpname = tf.name
-                    os.replace(tmpname, chosen_cache)
-                except Exception:
-                    pass
             out.write(json.dumps(item, ensure_ascii=False) + "\n")
             added += 1
             seen.add(uid)
-            # polite short delay
             time.sleep(delay)
+
+    # Persist cache once after processing
+    if not no_cache:
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=chosen_cache.parent) as tf:
+                json.dump(cache, tf, ensure_ascii=False)
+                tmpname = tf.name
+            os.replace(tmpname, chosen_cache)
+        except Exception:
+            pass
 
     print(f"Processed {total} pointers, wrote {added} content records -> {out_path}")
     return added
@@ -518,11 +504,11 @@ if __name__ == "__main__":
     main(
         pointers_path=Path(args.pointers),
         out_path=Path(args.out),
-        only_candidates=bool(args.only_candidates),
-        mark_skipped=bool(args.mark_skipped),
-        delay=float(args.delay),
-        no_cache=bool(args.no_cache),
+        only_candidates=args.only_candidates,
+        mark_skipped=args.mark_skipped,
+        delay=args.delay,
+        no_cache=args.no_cache,
         cache_path=Path(args.cache_path) if args.cache_path else None,
-        reprocess=bool(args.reprocess),
+        reprocess=args.reprocess,
         limit=args.limit,
     )

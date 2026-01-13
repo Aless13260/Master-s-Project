@@ -244,11 +244,11 @@ class LLMExtractor:
 
         item.extracted_at = datetime.now(timezone.utc).isoformat()
 
-        # Standardize company name: parse ticker from source_id, map to full name
+        # Extract ticker from source_id (e.g., "msft_8k" -> "MSFT")
         if metadata.get("source_id"):
             sid = str(metadata.get("source_id"))
-            ticker = sid.split('_')[0].upper()  # e.g. "msft_8k" -> "MSFT"
-            item.company = COMPANY_MAP.get(ticker, ticker)  # Fallback to ticker if not in map
+            ticker = sid.split('_')[0].upper()
+            item.ticker = ticker  # Store ticker directly
             
             # Map source_type based on source_id
             sid_lower = sid.lower()
@@ -459,7 +459,7 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                 # Even if reporting_period is missing, we try to infer it using the agent
                 parsed.reporting_period = self._normalize_period(
                     raw_period=parsed.reporting_period,
-                    company=parsed.company or "",
+                    company=parsed.ticker or "",
                     published_at=metadata.get('published_at', '') if metadata else "",
                     statement_text=parsed.statement_text or "",
                     use_agent=use_agentic_normalization

@@ -30,42 +30,11 @@ def normalize_string(s):
     s = s.replace('’', "'").replace('“', '"').replace('”', '"')
     return s
 
-def normalize_company(c):
-    s = normalize_string(c)
-    # Remove common suffixes
-    suffixes = [
-        ", inc.", " inc.", " inc", 
-        ", corp.", " corp.", " corp", " corporation",
-        ", ltd.", " ltd.", " ltd", 
-        ", plc", " plc", 
-        " group", " holdings", " systems", " technologies", " companies", " company"
-    ]
-    for suffix in suffixes:
-        if s.endswith(suffix):
-            s = s[:-len(suffix)]
-            
-    # Remove punctuation at the end
-    s = s.strip(".,")
-    
-    # Specific mappings
-    mappings = {
-        "goog": "alphabet",
-        "googl": "alphabet",
-        "google": "alphabet",
-        "meta platforms": "meta",
-        "lowe's": "lowes", # Remove apostrophe for easier matching
-        "lowes": "lowes"
-    }
-    
-    # Remove apostrophes for comparison
-    s_clean = s.replace("'", "")
-    if s_clean in mappings:
-        return mappings[s_clean]
-        
-    if s in mappings:
-        return mappings[s]
-        
-    return s
+def normalize_ticker(t):
+    """Normalize ticker to uppercase."""
+    if not t:
+        return ""
+    return str(t).upper().strip()
 
 def normalize_metric(m):
     s = normalize_string(m)
@@ -433,11 +402,11 @@ def score_item(gt, pred, track_field=None):
                     'pred_raw': pred_val,
                     'gt_normalized': gt_normalized,
                     'pred_normalized': pred_normalized,
-                    'company': gt.get('company'),
+                    'ticker': gt.get('ticker'),
                     'metric': gt.get('metric_name'),
                 }
-        elif field == 'company':
-            if normalize_company(gt_val) == normalize_company(pred_val):
+        elif field == 'ticker':
+            if normalize_ticker(gt_val) == normalize_ticker(pred_val):
                 is_match = True
         elif field == 'metric_name':
             if normalize_metric(gt_val) == normalize_metric(pred_val):
@@ -453,7 +422,7 @@ def score_item(gt, pred, track_field=None):
                     'pred_raw': pred_val,
                     'gt_normalized': gt_normalized,
                     'pred_normalized': pred_normalized,
-                    'company': gt.get('company'),
+                    'ticker': gt.get('ticker'),
                     'metric': gt.get('metric_name'),
                 }
         elif isinstance(gt_val, (int, float)) and isinstance(pred_val, (int, float)):
@@ -472,7 +441,7 @@ def score_item(gt, pred, track_field=None):
                     'pred_raw': pred_val,
                     'gt_normalized': normalize_string(gt_val),
                     'pred_normalized': normalize_string(pred_val),
-                    'company': gt.get('company'),
+                    'ticker': gt.get('ticker'),
                     'metric': gt.get('metric_name'),
                 }
                 
@@ -639,7 +608,7 @@ def main():
     if args.show_mismatches and field_mismatches:
         print(f"\n--- Mismatches for '{args.show_mismatches}' ({len(field_mismatches)} total) ---")
         for i, m in enumerate(field_mismatches, 1):
-            print(f"{i}. {m.get('company', 'Unknown')} - {m.get('metric', 'Unknown')}")
+            print(f"{i}. {m.get('ticker', 'Unknown')} - {m.get('metric', 'Unknown')}")
             print(f"   GT:   {m.get('gt_raw')}")
             print(f"   Pred: {m.get('pred_raw')}")
     
@@ -648,7 +617,7 @@ def main():
         print(f"\n--- Extra Predictions (False Positives): {len(extra_items)} ---")
         for i, e in enumerate(extra_items, 1):
             item = e['item']
-            print(f"{i}. {item.get('company', 'Unknown')} - {item.get('metric_name', 'Unknown')}")
+            print(f"{i}. {item.get('ticker', 'Unknown')} - {item.get('metric_name', 'Unknown')}")
             print(f"   Type: {item.get('guidance_type')} | Period: {item.get('reporting_period')}")
             print(f"   Values: low={item.get('guided_range_low')}, high={item.get('guided_range_high')}, current={item.get('current_value')}")
 

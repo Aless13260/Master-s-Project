@@ -276,7 +276,7 @@ def load_data():
     conn = get_connection()
     query = """
     SELECT 
-        g.company AS "Company",
+        g.ticker AS "Ticker",
         g.guidance_type AS "Type",
         g.metric_name AS "Metric",
         g.reporting_period AS "Period",
@@ -332,12 +332,12 @@ def create_excel_download(df):
         export_df = df.copy()
         export_df.to_excel(writer, sheet_name='Guidance Data', index=False)
         
-        # Summary by company
-        company_summary = df.groupby('Company').agg({
+        # Summary by ticker
+        ticker_summary = df.groupby('Ticker').agg({
             'Metric': 'count',
             'Is Revision': 'sum'
         }).rename(columns={'Metric': 'Total Guidance', 'Is Revision': 'Revisions'})
-        company_summary.to_excel(writer, sheet_name='By Company')
+        ticker_summary.to_excel(writer, sheet_name='By Ticker')
         
         # Summary by type
         type_summary = df.groupby('Type').agg({
@@ -429,13 +429,13 @@ try:
             
             st.markdown("---")
             
-            # Company Filter
-            companies = sorted(df['Company'].dropna().unique().tolist())
-            selected_companies = st.multiselect(
-                "🏢 Companies",
-                options=companies,
+            # Ticker Filter
+            tickers = sorted(df['Ticker'].dropna().unique().tolist())
+            selected_tickers = st.multiselect(
+                "📊 Tickers",
+                options=tickers,
                 default=[],
-                placeholder="All companies"
+                placeholder="All tickers"
             )
             
             # Guidance Type Filter
@@ -463,7 +463,7 @@ try:
             st.markdown("---")
             st.markdown("### 📊 Quick Stats")
             st.caption(f"**Database:** {len(df)} total records")
-            st.caption(f"**Companies:** {df['Company'].nunique()}")
+            st.caption(f"**Tickers:** {df['Ticker'].nunique()}")
             st.caption(f"**Date Range:** {format_date(df['Published'].min())} to {format_date(df['Published'].max())}")
         
         # Apply filters
@@ -494,8 +494,8 @@ try:
                     (pub_dates <= end_date)
                 ]
         
-        if selected_companies:
-            filtered_df = filtered_df[filtered_df['Company'].isin(selected_companies)]
+        if selected_tickers:
+            filtered_df = filtered_df[filtered_df['Ticker'].isin(selected_tickers)]
         if selected_types:
             filtered_df = filtered_df[filtered_df['Type'].isin(selected_types)]
         if selected_periods:
@@ -514,8 +514,8 @@ try:
             )
         with col2:
             st.metric(
-                label="🏢 Companies",
-                value=filtered_df['Company'].nunique()
+                label="📊 Tickers",
+                value=filtered_df['Ticker'].nunique()
             )
         with col3:
             st.metric(
@@ -658,7 +658,7 @@ try:
             # Select and reorder columns for display
             display_columns = [
                 'Published',
-                'Company',
+                'Ticker',
                 'Type',
                 'Metric',
                 'Period',
@@ -674,7 +674,7 @@ try:
             
             # Configure column display
             column_config = {
-                "Company": st.column_config.TextColumn("Company", width="medium"),
+                "Ticker": st.column_config.TextColumn("Ticker", width="small"),
                 "Type": st.column_config.TextColumn("Type", width="small"),
                 "Metric": st.column_config.TextColumn("Metric", width="large"),
                 "Period": st.column_config.TextColumn("Period", width="small"),
@@ -731,34 +731,34 @@ try:
             with col_dl3:
                 st.caption(f"Showing {len(display_df):,} of {len(df):,} records")
         
-        # Company Sparklines Section
-        if len(filtered_df) > 0 and filtered_df['Company'].nunique() <= 20:
+        # Ticker Sparklines Section
+        if len(filtered_df) > 0 and filtered_df['Ticker'].nunique() <= 20:
             st.markdown("""
             <div class="section-header">
-                <h3>📉 Guidance Trends by Company</h3>
+                <h3>📉 Guidance Trends by Ticker</h3>
             </div>
             """, unsafe_allow_html=True)
             
-            # Get top companies by guidance count
-            top_companies = filtered_df['Company'].value_counts().head(8).index.tolist()
+            # Get top tickers by guidance count
+            top_tickers = filtered_df['Ticker'].value_counts().head(8).index.tolist()
             
-            if top_companies and 'Published_dt' in filtered_df.columns:
-                sparkline_df = filtered_df[filtered_df['Company'].isin(top_companies)].copy()
+            if top_tickers and 'Published_dt' in filtered_df.columns:
+                sparkline_df = filtered_df[filtered_df['Ticker'].isin(top_tickers)].copy()
                 sparkline_df['Published_dt'] = pd.to_datetime(sparkline_df['Published_dt'], errors='coerce', utc=True)
                 sparkline_df = sparkline_df[sparkline_df['Published_dt'].notna()]
                 
                 if not sparkline_df.empty:
                     sparkline_df['Month'] = sparkline_df['Published_dt'].dt.to_period('M').dt.start_time
-                    monthly_by_company = sparkline_df.groupby(['Month', 'Company']).size().reset_index(name='Count')
+                    monthly_by_ticker = sparkline_df.groupby(['Month', 'Ticker']).size().reset_index(name='Count')
                     
-                    sparklines = alt.Chart(monthly_by_company).mark_line(
+                    sparklines = alt.Chart(monthly_by_ticker).mark_line(
                         strokeWidth=2,
                         point=alt.OverlayMarkDef(size=30)
                     ).encode(
                         x=alt.X('Month:T', title='', axis=alt.Axis(labelColor='#a5b4fc', format='%b')),
                         y=alt.Y('Count:Q', title='Events', axis=alt.Axis(labelColor='#a5b4fc')),
                         color=alt.Color(
-                            'Company:N',
+                            'Ticker:N',
                             scale=alt.Scale(scheme='plasma'),
                             legend=alt.Legend(
                                 orient='bottom',
@@ -766,7 +766,7 @@ try:
                                 labelColor='#a5b4fc'
                             )
                         ),
-                        tooltip=['Month:T', 'Company', 'Count']
+                        tooltip=['Month:T', 'Ticker', 'Count']
                     ).properties(
                         height=250
                     ).configure_view(

@@ -909,7 +909,7 @@ class SyntheticGuidanceItem:
     at the document level (SyntheticDocument), not duplicated per guidance item.
     """
     guid: str = field(default_factory=lambda: uuid4().hex)
-    company: Optional[str] = None
+    ticker: Optional[str] = None  # Stock ticker symbol (e.g., AAPL, MSFT)
     guidance_type: Optional[str] = None
     metric_name: Optional[str] = None
     reporting_period: Optional[str] = None
@@ -1001,7 +1001,7 @@ class SyntheticGuidanceGenerator:
         standard_period, natural_period = generate_reporting_period(self.base_year, period_type)
         
         item = SyntheticGuidanceItem(
-            company=company["name"],
+            ticker=company["ticker"],
             guidance_type=guidance_type,
             metric_name=metric_name,
             reporting_period=standard_period,
