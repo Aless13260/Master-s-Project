@@ -178,6 +178,15 @@ def migrate_guidance(conn, file_path):
                 row_uid = row.get('uid')
                 extraction_method = g.get('extraction_method', 'standard')
                 
+                # Derive ticker from source_id (e.g., "msft_8k" -> "MSFT")
+                # Fall back to 'ticker' field if present, otherwise use 'company'
+                source_id = row.get('source_id', '')
+                ticker = g.get('ticker')
+                if not ticker and source_id and '_' in source_id:
+                    ticker = source_id.split('_')[0].upper()
+                if not ticker:
+                    ticker = g.get('company', '')
+                
                 guid_id = generate_deterministic_id({
                     'content_uid': row_uid,
                     'metric_name': g.get('metric_name'),
@@ -199,7 +208,7 @@ def migrate_guidance(conn, file_path):
                     guid_id,
                     row_uid,  # content_uid comes from the top level 'uid'
                     row.get('source_id'),
-                    g.get('ticker'),
+                    ticker,
                     g.get('guidance_type'),
                     g.get('metric_name'),
                     g.get('reporting_period'),

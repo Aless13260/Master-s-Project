@@ -10,3 +10,5 @@ beautifulsoup4
 bs4
 llama-index-llms-deepseek
 streamlit
+matplotlib
+seaborn
