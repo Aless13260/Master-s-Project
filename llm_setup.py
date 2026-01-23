@@ -13,7 +13,7 @@ from llama_index.llms.openai import OpenAI
 load_dotenv()
 
 
-def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
+def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0, verbose=True):
     """
     Configure LlamaIndex with the specified LLM provider.
     
@@ -22,6 +22,7 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
         model: Specific model name (or None for defaults)
         temperature: 0.0 for deterministic, higher for creative
         timeout: Request timeout in seconds (default: 120.0)
+        verbose: Whether to print LLM setup messages (default: True)
     
     Returns:
         Configured LLM instance
@@ -40,7 +41,8 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
             temperature=temperature,
             timeout=timeout,
         )
-        print(f"[LLM] Using DeepSeek: {model} (timeout={timeout}s)")
+        if verbose:
+            print(f"[LLM] Using DeepSeek: {model} (timeout={timeout}s)")
     
     elif provider == "github":
         api_key_chatGPT = os.getenv("GITHUB_MODELS_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -55,7 +57,8 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
             temperature=temperature,
             timeout=timeout,
         )
-        print(f"[LLM] Using GitHub Models: {model} (timeout={timeout}s)")
+        if verbose:
+            print(f"[LLM] Using GitHub Models: {model} (timeout={timeout}s)")
     
     elif provider == "openai":
         # Direct OpenAI API - uses separate key from GitHub Models
@@ -72,7 +75,8 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
             timeout=timeout,
             api_base="https://api.openai.com/v1",  # Direct OpenAI endpoint
         )
-        print(f"[LLM] Using OpenAI Direct: {model} (timeout={timeout}s)")
+        if verbose:
+            print(f"[LLM] Using OpenAI Direct: {model} (timeout={timeout}s)")
     
     else:
         raise ValueError(f"Unknown provider: {provider}. Use 'github', 'openai', 'anthropic', or 'ollama'")

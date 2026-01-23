@@ -64,17 +64,18 @@ class MultiGuidanceExtraction(BaseModel):
 class LLMExtractor:
     """Extract financial guidance using an LLM with structured output."""
     
-    def __init__(self, provider: str = "deepseek", model: str = None, enhanced_model: str = None, temperature: float = 0.0, max_retries: int = 3):
+    def __init__(self, provider: str = "deepseek", model: str = None, temperature: float = 0.0, max_retries: int = 3, verbose: bool = True):
         """
         Initialize the extractor.
         
         Args:
             provider: LLM provider ("deepseek", "github", "openai", etc.)
             model: Model for initial extraction (default: deepseek-chat for deepseek, gpt-4o for openai)
-            enhanced_model: Model for enhanced extraction (default: deepseek-reasoner if provider is deepseek)
             temperature: 0.0 for deterministic extraction
             max_retries: Number of retry attempts for failed LLM calls
+            verbose: Whether to print setup messages (default: True)
         """
+        self.verbose = verbose
         # store config so we can reconfigure on errors (e.g., rate limits)
         self.provider = provider
         
@@ -91,33 +92,19 @@ class LLMExtractor:
             self.model = "deepseek-chat"
         
         self.temperature = temperature
-        self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
+        self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature, verbose=self.verbose)
         
-        # Setup separate LLM for enhanced extraction (e.g., deepseek-reasoner)
-        if enhanced_model:
-            self.enhanced_model_name = enhanced_model
-        elif provider == "deepseek":
-            self.enhanced_model_name = "deepseek-reasoner" # Default to reasoner model for DeepSeek
-        elif provider in ("openai", "github"):
-            self.enhanced_model_name = self.model  # OpenAI uses same model
-        else:
-            self.enhanced_model_name = self.model # Fallback to same model
-
-        print(f"[LLM] Enhanced Model: {self.enhanced_model_name}")
-        self.enhanced_llm = setup_llm(provider=self.provider, model=self.enhanced_model_name, temperature=self.temperature)
-
-        # Setup utility LLM for tools (agents) - MUST support function calling
+        # Tool LLM for agents (lazy-initialized) - MUST support function calling
         # DeepSeek Reasoner (R1) does NOT support tools, so we force deepseek-chat for agents
         if provider == "deepseek":
-            self.tool_llm_name = "deepseek-chat"
+            self._tool_llm_name = "deepseek-chat"
         else:
-            self.tool_llm_name = self.model # Assume other providers' main models support tools
-            
-        self.tool_llm = setup_llm(provider=self.provider, model=self.tool_llm_name, temperature=self.temperature)
+            self._tool_llm_name = self.model  # Assume other providers' main models support tools
+        self._tool_llm = None  # Lazy-initialized only when agent is needed
 
         self.max_retries = max_retries
 
-        # Create period normalization agent (lazy-loaded, only created if needed)
+        # Period normalization agent (lazy-loaded, only created if needed)
         self._period_agent = None
 
         # System prompt for extraction
@@ -194,12 +181,24 @@ class LLMExtractor:
         
 
     @property
+    def tool_llm(self):
+        """Lazy-load the tool LLM (for agents)."""
+        if self._tool_llm is None:
+            self._tool_llm = setup_llm(
+                provider=self.provider, 
+                model=self._tool_llm_name, 
+                temperature=self.temperature, 
+                verbose=False
+            )
+        return self._tool_llm
+
+    @property
     def period_agent(self):
         """Lazy-load the period normalization agent with hierarchical LLM setup."""
         if self._period_agent is None:
             try:
                 print("  [AGENT] Creating period normalization agent...")
-                print(f"    - Agent LLM (tool-calling): {self.tool_llm_name}")
+                print(f"    - Agent LLM (tool-calling): {self._tool_llm_name}")
                 # Hierarchical setup:
                 # - agent_llm: deepseek-chat (supports function calling)
                 self._period_agent = create_period_normalization_agent(
@@ -335,8 +334,6 @@ class LLMExtractor:
         focused_text = "\n\n[...]\n\n".join(section for _, _, section in merged)
         
         if focused_text:
-            reduction = len(text) - len(focused_text)
-            print(f"  [SMART] Focused on {len(merged)} sections (reduced by {reduction:,} chars)")
             return focused_text
         
         # If no matches, return beginning (shouldn't happen with our pre-filtered candidates)
@@ -541,7 +538,6 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                         )
                         if same_metric_and_statement:
                             is_duplicate = True
-                            print(f"  [DEDUP] Skipped duplicate: {item.metric_name} (same statement)")
                             break
                         
                         # Criterion 2: Same guidance_type, reporting_period, AND numeric values
@@ -556,7 +552,6 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                         )
                         if same_type_period and same_numbers:
                             is_duplicate = True
-                            print(f"  [DEDUP] Skipped duplicate: {item.guidance_type} {item.reporting_period} with same values")
                             break
                     
                     if not is_duplicate:
@@ -569,10 +564,7 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                 amortized_duration = processing_duration / len(guidance_items)
                 for item in guidance_items:
                     item.processing_duration_seconds = round(amortized_duration, 2)
-                
-                print(f"  [LLM] Extracted {len(guidance_items)} guidance items")
-            else:
-                print("  [LLM] No guidance items found")
+            
             return guidance_items
 
         except Exception as e:
@@ -711,10 +703,11 @@ def main():
             thread_extractor = LLMExtractor(
                 provider=args.provider,
                 model=args.model,
-                max_retries=args.max_retries
+                max_retries=args.max_retries,
+                verbose=False  # Suppress per-thread LLM setup messages
             )
             
-            if args.reasoning:
+            if args.enhanced:
                 # Standard extraction + Agentic normalization
                 guidance_items = thread_extractor.extract_from_text(
                     full_text, 
