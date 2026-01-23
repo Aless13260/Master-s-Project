@@ -64,33 +64,47 @@ class MultiGuidanceExtraction(BaseModel):
 class LLMExtractor:
     """Extract financial guidance using an LLM with structured output."""
     
-    def __init__(self, provider: str = "deepseek", model: str = None, reasoning_model: str = None, temperature: float = 0.0, max_retries: int = 3):
+    def __init__(self, provider: str = "deepseek", model: str = None, enhanced_model: str = None, temperature: float = 0.0, max_retries: int = 3):
         """
         Initialize the extractor.
         
         Args:
             provider: LLM provider ("deepseek", "github", "openai", etc.)
-            model: Model for initial extraction (default: deepseek-chat)
-            reasoning_model: Model for reasoning extraction (default: deepseek-reasoner if provider is deepseek)
+            model: Model for initial extraction (default: deepseek-chat for deepseek, gpt-4o for openai)
+            enhanced_model: Model for enhanced extraction (default: deepseek-reasoner if provider is deepseek)
             temperature: 0.0 for deterministic extraction
             max_retries: Number of retry attempts for failed LLM calls
         """
         # store config so we can reconfigure on errors (e.g., rate limits)
         self.provider = provider
-        self.model = model or "deepseek-chat"
+        
+        # Set default model based on provider
+        if model:
+            self.model = model
+        elif provider == "deepseek":
+            self.model = "deepseek-chat"
+        elif provider == "openai":
+            self.model = "gpt-5"
+        elif provider == "github":
+            self.model = "gpt-4o"
+        else:
+            self.model = "deepseek-chat"
+        
         self.temperature = temperature
         self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature)
         
-        # Setup separate LLM for reasoning (Reasoning model)
-        if reasoning_model:
-            self.reasoning_model_name = reasoning_model
+        # Setup separate LLM for enhanced extraction (e.g., deepseek-reasoner)
+        if enhanced_model:
+            self.enhanced_model_name = enhanced_model
         elif provider == "deepseek":
-            self.reasoning_model_name = "deepseek-reasoner" # Default to reasoning model for DeepSeek
+            self.enhanced_model_name = "deepseek-reasoner" # Default to reasoner model for DeepSeek
+        elif provider in ("openai", "github"):
+            self.enhanced_model_name = self.model  # OpenAI uses same model
         else:
-            self.reasoning_model_name = self.model # Fallback to same model
+            self.enhanced_model_name = self.model # Fallback to same model
 
-        print(f"[LLM] Reasoning Model: {self.reasoning_model_name}")
-        self.reasoning_llm = setup_llm(provider=self.provider, model=self.reasoning_model_name, temperature=self.temperature)
+        print(f"[LLM] Enhanced Model: {self.enhanced_model_name}")
+        self.enhanced_llm = setup_llm(provider=self.provider, model=self.enhanced_model_name, temperature=self.temperature)
 
         # Setup utility LLM for tools (agents) - MUST support function calling
         # DeepSeek Reasoner (R1) does NOT support tools, so we force deepseek-chat for agents
@@ -511,29 +525,35 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                         pass
                 guidance_items.append(parsed)
             
-            # Deduplicate: Remove items with same numeric values for same type/period
-            # If the numbers are exactly the same, it's almost certainly the same guidance
+            # Deduplicate: Remove items that are essentially the same guidance
+            # Check multiple criteria to catch duplicates the LLM may have generated
             if len(guidance_items) > 1:
                 deduplicated = []
                 
                 for item in guidance_items:
-                    # Check if this is a duplicate based on numbers + type + period
+                    # Check if this is a duplicate based on multiple criteria
                     is_duplicate = False
                     for existing in deduplicated:
-                        # Same guidance_type and reporting_period
+                        # Criterion 1: Same metric_name AND same statement_text = definitely duplicate
+                        same_metric_and_statement = (
+                            item.metric_name == existing.metric_name and
+                            item.statement_text == existing.statement_text
+                        )
+                        if same_metric_and_statement:
+                            is_duplicate = True
+                            print(f"  [DEDUP] Skipped duplicate: {item.metric_name} (same statement)")
+                            break
+                        
+                        # Criterion 2: Same guidance_type, reporting_period, AND numeric values
                         same_type_period = (
                             item.guidance_type == existing.guidance_type and
                             item.reporting_period == existing.reporting_period
                         )
-                        
-                        # Same numeric values (all three must match)
                         same_numbers = (
                             item.guided_range_low == existing.guided_range_low and
                             item.guided_range_high == existing.guided_range_high and
                             item.current_value == existing.current_value
                         )
-                        
-                        # If same type/period AND same numbers, it's a duplicate
                         if same_type_period and same_numbers:
                             is_duplicate = True
                             print(f"  [DEDUP] Skipped duplicate: {item.guidance_type} {item.reporting_period} with same values")
@@ -559,7 +579,7 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
             print(f"  [ERROR] Post-processing failed: {e}")
             return []
 
-    # REMOVED: extract_with_reasoning (deprecated in favor of extract_from_text + agentic normalization)
+    # REMOVED: extract_with_enhanced (deprecated in favor of extract_from_text + agentic normalization)
 
 
 def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None, randomize: bool = False) -> List[Dict[str, Any]]:
@@ -613,13 +633,13 @@ def main():
     parser.add_argument("--random", action="store_true", help="Randomly sample max-items instead of taking the first N")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
-    parser.add_argument("--reasoning", action="store_true", help="Enable agentic period normalization (slower but more accurate)")
+    parser.add_argument("--enhanced", action="store_true", help="Enable agentic period normalization (slower but more accurate)")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers to use")
     
     args = parser.parse_args()
 
-    # If using default output path and reasoning mode is on, switch to reasoning filename
-    if args.reasoning and args.output == OUTPUT_PATH:
+    # If using default output path and enhanced mode is on, switch to agentic filename
+    if args.enhanced and args.output == OUTPUT_PATH:
         args.output = OUTPUT_PATH.with_name("extracted_guidance_agentic.jsonl")
     
     print("=" * 60)
@@ -627,7 +647,7 @@ def main():
     print("=" * 60)
     print(f"Provider: {args.provider}")
     print(f"Model: {args.model}")
-    print(f"Mode: {'Standard + Agentic Normalization' if args.reasoning else 'Standard + Regex Normalization'}")
+    print(f"Mode: {'Enhanced (Agentic Normalization)' if args.enhanced else 'Standard (Regex Normalization)'}")
     print(f"Max retries: {args.max_retries}")
     print(f"Output: {args.output}")
     if args.max_items:

@@ -5,7 +5,6 @@ llama-index-core
 llama-index-llms-openai
 requests
 trafilatura
-pypdf
 beautifulsoup4
 bs4
 llama-index-llms-deepseek

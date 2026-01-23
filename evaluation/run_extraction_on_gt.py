@@ -5,16 +5,17 @@ from pathlib import Path
 import time
 
 # Add project root to path to import extractor_lib
-sys.path.append(str(Path(__file__).parent.parent))
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.append(str(PROJECT_ROOT))
 
 from extractor_lib.LLM_extractor import LLMExtractor
 
-GT_DIR = Path("evaluation") / "ground_truth"
+GT_DIR = PROJECT_ROOT / "evaluation" / "ground_truth"
 CONTENTS_PATHS = [
-    Path("ingestion_json") / "contents.jsonl"
+    PROJECT_ROOT / "ingestion_json" / "contents.jsonl"
 ]
-OUTPUT_FILE_STANDARD = Path("evaluation") / "extracted_on_gt.jsonl"
-OUTPUT_FILE_REASONING = Path("evaluation") / "extracted_on_gt_reasoning.jsonl"
+OUTPUT_FILE_STANDARD = PROJECT_ROOT / "evaluation" / "extracted_on_gt.jsonl"
+OUTPUT_FILE_ENHANCED = PROJECT_ROOT / "evaluation" / "extracted_on_gt_enhanced.jsonl"
 
 def load_full_contents():
     """Load full text content from ingestion_json/contents_*.jsonl"""
@@ -47,17 +48,23 @@ def load_gt_records():
 
 def main():
     parser = argparse.ArgumentParser(description="Run extraction on ground truth data.")
-    parser.add_argument("--reasoning", action="store_true", help="Enable reasoning model extraction.")
+    parser.add_argument("--enhanced", action="store_true", help="Enable enhanced mode extraction (agentic period normalization).")
     parser.add_argument("--resume", action="store_true", help="Resume from existing output file, skipping processed UIDs.")
+    parser.add_argument("--provider", default="deepseek", help="LLM provider (deepseek, openai, github)")
+    parser.add_argument("--model", default=None, help="Specific model name (e.g., gpt-5, deepseek-chat)")
+    parser.add_argument("--output", default=None, help="Custom output file name (relative to evaluation/)")
     args = parser.parse_args()
 
     records = load_gt_records()
     full_contents = load_full_contents()
     print(f"Loaded {len(records)} records.")
     
-    # Determine output file based on mode
-    output_file = OUTPUT_FILE_REASONING if args.reasoning else OUTPUT_FILE_STANDARD
-    print(f"Mode: {'Reasoning' if args.reasoning else 'Standard'}")
+    # Determine output file based on mode or custom path
+    if args.output:
+        output_file = Path(__file__).parent / args.output
+    else:
+        output_file = OUTPUT_FILE_ENHANCED if args.enhanced else OUTPUT_FILE_STANDARD
+    print(f"Mode: {'Enhanced' if args.enhanced else 'Standard'}")
     print(f"Output: {output_file}")
 
     # Check for existing progress
@@ -82,8 +89,8 @@ def main():
         print(f"Starting from scratch. Existing file {output_file} will be overwritten.")
 
     # Initialize extractor
-    # Using deepseek as default provider, adjust if needed
-    extractor = LLMExtractor(provider="deepseek", temperature=0.0)
+    extractor = LLMExtractor(provider=args.provider, model=args.model, temperature=0.0)
+    print(f"Using provider: {args.provider}, model: {args.model or 'default'}")
     
     # Open in append mode if resuming, else write mode
     mode = "a" if args.resume else "w"
@@ -135,7 +142,7 @@ def main():
                 }
                 
                 # Extract guidance based on selected mode
-                if args.reasoning:
+                if args.enhanced:
                     guidance_items = extractor.extract_from_text(text, metadata, use_agentic_normalization=True)
                 else:
                     guidance_items = extractor.extract_from_text(text, metadata, use_agentic_normalization=False)

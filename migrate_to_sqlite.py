@@ -236,7 +236,7 @@ def migrate_guidance(conn, file_path):
 def main():
     parser = argparse.ArgumentParser(description="Migrate JSONL data to SQLite")
     parser.add_argument("--refresh", action="store_true", help="Drop existing tables and start fresh")
-    parser.add_argument("--reasoning", action="store_true", help="Use agentic extraction output only")
+    parser.add_argument("--enhanced", action="store_true", help="Use agentic extraction output only")
     args = parser.parse_args()
 
     print(f"Creating/Connecting to database: {DB_PATH}")
@@ -252,7 +252,7 @@ def main():
         migrate_candidates(conn)
         
         # Migrate guidance from selected source
-        if args.reasoning:
+        if args.enhanced:
             print("Using agentic extraction output...")
             migrate_guidance(conn, AGENTIC_GUIDANCE_PATH)
         else:

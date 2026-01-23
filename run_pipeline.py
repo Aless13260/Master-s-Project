@@ -16,10 +16,10 @@ def run_step(command, description):
 
 def main():
     parser = argparse.ArgumentParser(description="Run the complete Finance Guidance Extraction Pipeline")
-    parser.add_argument("--skip-ingest", action="store_true", help="Skip RSS ingestion and HTML/PDF parsing")
+    parser.add_argument("--skip-ingest", action="store_true", help="Skip RSS ingestion and HTML parsing")
     parser.add_argument("--skip-filter", action="store_true", help="Skip regex filtering")
     parser.add_argument("--skip-extract", action="store_true", help="Skip LLM extraction")
-    parser.add_argument("--reasoning", action="store_true", help="Use Reasoning mode for extraction")
+    parser.add_argument("--enhanced", action="store_true", help="Use enhanced mode for extraction (agentic period normalization)")
     parser.add_argument("--max-items", type=int, help="Limit number of items for LLM extraction (testing)")
     parser.add_argument("--refresh-db", action="store_true", help="Drop and recreate SQLite tables")
     
@@ -27,16 +27,13 @@ def main():
     
     python_exe = sys.executable
 
-    # 1. Ingestion (RSS -> HTML/PDF)
+    # 1. Ingestion (RSS -> HTML)
     if not args.skip_ingest:
         # A. RSS Ingest
         run_step(f'"{python_exe}" ingestion_scripts/rss_guidance_ingest.py', "Ingesting RSS Feeds")
         
         # B. HTML Parse
         run_step(f'"{python_exe}" ingestion_scripts/web_parse_trafilatura.py', "Parsing HTML Content")
-        
-        # C. PDF Parse
-        run_step(f'"{python_exe}" ingestion_scripts/parse_pdfs.py', "Parsing PDF Content")
 
     # 2. Filtering (Content -> Candidates)
     if not args.skip_filter:
@@ -45,8 +42,8 @@ def main():
     # 3. Extraction (Candidates -> JSONL)
     if not args.skip_extract:
         cmd = f'"{python_exe}" extractor_lib/LLM_extractor.py'
-        if args.reasoning:
-            cmd += " --reasoning"
+        if args.enhanced:
+            cmd += " --enhanced"
         if args.max_items:
             cmd += f" --max-items {args.max_items}"
         
@@ -56,8 +53,8 @@ def main():
     cmd = f'"{python_exe}" migrate_to_sqlite.py'
     if args.refresh_db:
         cmd += " --refresh"
-    if args.reasoning:
-        cmd += " --reasoning"
+    if args.enhanced:
+        cmd += " --enhanced"
     run_step(cmd, "Migrating to SQLite Database")
 
     print("\n" + "="*60)

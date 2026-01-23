@@ -1,0 +1,117 @@
+{
+  "Microsoft": {
+    "fy_end_month": 6,
+    "fy_end_day": 30,
+    "notes": "Fiscal year ends June 30"
+  },
+  "MSFT": {
+    "fy_end_month": 6,
+    "fy_end_day": 30,
+    "notes": "Fiscal year ends June 30"
+  },
+  "Apple": {
+    "fy_end_month": 9,
+    "fy_end_day": 30,
+    "notes": "Fiscal year ends last Saturday of September"
+  },
+  "AAPL": {
+    "fy_end_month": 9,
+    "fy_end_day": 30,
+    "notes": "Fiscal year ends last Saturday of September"
+  },
+  "NVIDIA": {
+    "fy_end_month": 1,
+    "fy_end_day": 31,
+    "notes": "Fiscal year ends last Sunday of January"
+  },
+  "Tesla": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "TSLA": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "Amazon": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "AMZN": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "Meta": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "Alphabet": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "GOOGL": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "Google": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "Walmart": {
+    "fy_end_month": 1,
+    "fy_end_day": 31,
+    "notes": "Fiscal year ends January 31"
+  },
+  "Target": {
+    "fy_end_month": 1,
+    "fy_end_day": 31,
+    "notes": "Fiscal year ends around January 31"
+  },
+  "Oracle": {
+    "fy_end_month": 5,
+    "fy_end_day": 31,
+    "notes": "Fiscal year ends May 31"
+  },
+  "Adobe": {
+    "fy_end_month": 11,
+    "fy_end_day": 30,
+    "notes": "Fiscal year ends around November 30"
+  },
+  "Salesforce": {
+    "fy_end_month": 1,
+    "fy_end_day": 31,
+    "notes": "Fiscal year ends January 31"
+  },
+  "Intel": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "AMD": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  },
+  "Qualcomm": {
+    "fy_end_month": 9,
+    "fy_end_day": 30,
+    "notes": "Fiscal year ends last Sunday in September"
+  },
+  "Cisco": {
+    "fy_end_month": 7,
+    "fy_end_day": 31,
+    "notes": "Fiscal year ends last Saturday in July"
+  },
+  "SAP": {
+    "fy_end_month": 12,
+    "fy_end_day": 31,
+    "notes": "Fiscal year = Calendar year"
+  }
+}

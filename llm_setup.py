@@ -43,12 +43,11 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
         print(f"[LLM] Using DeepSeek: {model} (timeout={timeout}s)")
     
     elif provider == "github":
-        api_key_chatGPT = os.getenv("OPENAI_API_KEY")
+        api_key_chatGPT = os.getenv("GITHUB_MODELS_API_KEY") or os.getenv("OPENAI_API_KEY")
         if not api_key_chatGPT:
-            raise ValueError("OPENAI_API_KEY not found in .env file")
+            raise ValueError("GITHUB_MODELS_API_KEY or OPENAI_API_KEY not found in .env file")
         
         model = model or "gpt-4o-mini"  # Cheaper, faster for extraction
-        # model = model or "gpt-4o"  # Use this for higher quality
         
         llm = OpenAI(
             api_key=api_key_chatGPT,
@@ -56,8 +55,24 @@ def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0):
             temperature=temperature,
             timeout=timeout,
         )
-        print(f"[LLM] Using OpenAI: {model} (timeout={timeout}s)")
+        print(f"[LLM] Using GitHub Models: {model} (timeout={timeout}s)")
     
+    elif provider == "openai":
+        # Direct OpenAI API - uses separate key from GitHub Models
+        api_key = os.getenv("OPENAI_DIRECT_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_DIRECT_API_KEY not found in .env file. Get one from https://platform.openai.com/api-keys")
+        
+        model = model or "gpt-5"  # Default to gpt-5.2
+        
+        llm = OpenAI(
+            api_key=api_key,
+            model=model,
+            temperature=temperature,
+            timeout=timeout,
+            api_base="https://api.openai.com/v1",  # Direct OpenAI endpoint
+        )
+        print(f"[LLM] Using OpenAI Direct: {model} (timeout={timeout}s)")
     
     else:
         raise ValueError(f"Unknown provider: {provider}. Use 'github', 'openai', 'anthropic', or 'ollama'")

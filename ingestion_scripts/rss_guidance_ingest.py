@@ -2,7 +2,12 @@ import sys, json, feedparser, yaml, datetime as dt, zoneinfo, hashlib, argparse
 from pathlib import Path
 from typing import Iterator, Dict, Any, List, Set
 import requests
-TZ = zoneinfo.ZoneInfo("Asia/Kuala_Lumpur")
+
+# Import centralized config
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import USER_AGENT, TIMEZONE
+
+TZ = zoneinfo.ZoneInfo(TIMEZONE)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # ────────────────────────────── Config ──────────────────────────────
@@ -11,14 +16,12 @@ def load_feeds(path: str = str(PROJECT_ROOT / "sources.yaml")) -> List[Dict[str,
         data = yaml.safe_load(f) or {}
     return [f for f in data.get("feeds", []) if f.get("id") and f.get("url")]
 
- 
-UA = "AgenticFinanceResearchBot/0.1 (contact: aless13260@gmail.com)"
 
 def fetch_feed(url: str) -> bytes | None:
     """Fetch RSS feed bytes with polite headers & retries."""
     try:
         headers = {
-            "User-Agent": UA,
+            "User-Agent": USER_AGENT,
             "Accept": "application/rss+xml, application/xml;q=0.9,*/*;q=0.8",
         }
         resp = requests.get(url, headers=headers, timeout=15)

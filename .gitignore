@@ -3,15 +3,27 @@ __pycache__/
 *.pyc
 .venv/
 .env
+
 # IDE
 .vscode/
 .idea/
-# Data / secrets
-*.csv
-*.json
-*.jsonl
+
+# Data files (regeneratable from pipeline)
+ingestion_json/*.jsonl
+ingestion_json/*.json
+extractor_lib/*.jsonl
+evaluation/*.jsonl
 *.db
 *.sqlite
+*.csv
+
+# Keep these essential static files (override above patterns)
+!extractor_lib/fiscal_calendars.json
+!evaluation/ground_truth/*.jsonl
+!sources.yaml
+
 # Local tooling and analysis outputs
 tools/
-pointerEvents/
+
+# Backup files
+*.bak
