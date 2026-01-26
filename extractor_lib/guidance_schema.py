@@ -29,7 +29,7 @@ class GuidanceExtraction(BaseModel):
 
     # Quantitative data
     current_value: Optional[float] = None
-    unit: Optional[Literal["USD", "%", "million", "billion", "units", "other"]] = None
+    unit: Optional[Literal["USD", "%", "million", "billion", "units"]] = None
     # guided_value removed in favor of using guided_range_low for single values
     guided_range_low: Optional[float] = None
     guided_range_high: Optional[float] = None

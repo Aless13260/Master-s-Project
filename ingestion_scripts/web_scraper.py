@@ -190,6 +190,8 @@ def main(
     cache_path: Path | None = None,
     reprocess: bool = False,
     limit: int | None = None,
+    min_date: dt.date | None = None,
+    require_items: tuple[str, ...] | None = ("item 2.02", "item 7.01"),
 ) -> int:
     seen = set()
     # choose cache path
@@ -217,9 +219,38 @@ def main(
 
     # guidance keywords used to decide whether to follow a pointer
     guidance_patterns = ("8-k", "8k", "press release", "press-release", "earnings", "results", "guidance", "outlook", "results")
+    
+    # Pre-count eligible pointers for progress reporting
+    eligible_count = 0
+    for p in read_jsonl(pointers_path):
+        uid = p.get("uid")
+        if not uid or uid in seen:
+            continue
+        # Quick date/item filter check
+        if min_date:
+            published = p.get("published_at")
+            if published:
+                try:
+                    pub_date = dt.datetime.fromisoformat(published.replace("Z", "+00:00")).date()
+                    if pub_date < min_date:
+                        continue
+                except:
+                    pass
+        if require_items:
+            summary = (p.get("summary_hint") or "").lower()
+            source_id = p.get("source_id") or ""
+            if source_id.endswith("_8k") and not any(item in summary for item in require_items):
+                continue
+        eligible_count += 1
+    
+    print(f"Found {eligible_count} eligible filings to process (after filters)")
 
     total = 0
     added = 0
+    processed = 0  # Count of actually fetched items (for progress)
+    pdf_skipped = 0
+    date_filtered = 0
+    item_filtered = 0
     with out_path.open("a", encoding="utf-8") as out:
         for p in read_jsonl(pointers_path):
             if limit is not None and added >= limit:
@@ -231,6 +262,30 @@ def main(
             link = p.get("link")
             if not link:
                 continue
+            
+            # Date filter: skip filings older than min_date
+            if min_date:
+                published = p.get("published_at")
+                if published:
+                    try:
+                        pub_date = dt.datetime.fromisoformat(published.replace("Z", "+00:00")).date()
+                        if pub_date < min_date:
+                            date_filtered += 1
+                            seen.add(uid)
+                            continue
+                    except (ValueError, AttributeError):
+                        pass
+            
+            # Item filter: for 8-K filings, require specific item types
+            if require_items:
+                summary = (p.get("summary_hint") or "").lower()
+                source_id = p.get("source_id") or ""
+                if source_id.endswith("_8k"):
+                    if not any(item in summary for item in require_items):
+                        item_filtered += 1
+                        seen.add(uid)
+                        continue
+            
             # decide whether this pointer is a candidate by title/summary (backwards compatible)
             is_candidate = False
             if p.get("guidance_candidate") is not None:
@@ -262,6 +317,11 @@ def main(
                     # quiet skip
                     print(f"[SKIP] not a candidate: {uid} - {p.get('title')}")
                 continue
+            processed += 1
+            if processed % 50 == 0 or processed == 1:
+                pct = 100 * processed / eligible_count if eligible_count > 0 else 0
+                print(f"[Progress] {processed}/{eligible_count} ({pct:.1f}%)")
+            
             item: Dict[str, Any] = {
                 "uid": uid,
                 "source_id": p.get("source_id"),
@@ -280,6 +340,7 @@ def main(
                 item["fetch_status"] = "skipped_pdf"
                 out.write(json.dumps(item, ensure_ascii=False) + "\n")
                 added += 1
+                pdf_skipped += 1
                 seen.add(uid)
                 continue
 
@@ -296,6 +357,7 @@ def main(
                 item["fetch_status"] = "skipped_pdf"
                 out.write(json.dumps(item, ensure_ascii=False) + "\n")
                 added += 1
+                pdf_skipped += 1
                 seen.add(uid)
                 continue
 
@@ -348,6 +410,7 @@ def main(
                             item["fetch_status"] = "skipped_pdf"
                             out.write(json.dumps(item, ensure_ascii=False) + "\n")
                             added += 1
+                            pdf_skipped += 1
                             seen.add(uid)
                             time.sleep(delay)
                             continue
@@ -421,6 +484,12 @@ def main(
             pass
 
     print(f"Processed {total} pointers, wrote {added} content records -> {out_path}")
+    if pdf_skipped > 0:
+        print(f"  (Skipped {pdf_skipped} PDF links)")
+    if date_filtered > 0:
+        print(f"  (Skipped {date_filtered} filings dated before {min_date})")
+    if item_filtered > 0:
+        print(f"  (Skipped {item_filtered} filings without Item 2.02/7.01)")
     return added
 
 
@@ -436,7 +505,20 @@ if __name__ == "__main__":
     parser.add_argument("--cache-path", type=str, default=str(CACHE_PATH), help="Cache JSON path.")
     parser.add_argument("--reprocess", action="store_true", default=False, help="Do not skip already-seen UIDs in the output.")
     parser.add_argument("--limit", type=int, default=None, help="Stop after writing N records.")
+    parser.add_argument("--min-date", type=str, default="2021-01-26", help="Only process filings on or after this date (YYYY-MM-DD). Default: 5 years ago.")
+    parser.add_argument("--no-item-filter", action="store_true", default=False, help="Disable 8-K item type filtering (default: only Item 2.02 and 7.01).")
     args = parser.parse_args()
+    
+    # Parse min_date
+    min_date = None
+    if args.min_date:
+        try:
+            min_date = dt.datetime.strptime(args.min_date, "%Y-%m-%d").date()
+        except ValueError:
+            print(f"[WARN] Invalid min-date format: {args.min_date}, expected YYYY-MM-DD. Ignoring.")
+    
+    # Item filter
+    require_items = ("item 2.02", "item 7.01") if not args.no_item_filter else None
 
     main(
         pointers_path=Path(args.pointers),
@@ -448,4 +530,6 @@ if __name__ == "__main__":
         cache_path=Path(args.cache_path) if args.cache_path else None,
         reprocess=args.reprocess,
         limit=args.limit,
+        min_date=min_date,
+        require_items=require_items,
     )

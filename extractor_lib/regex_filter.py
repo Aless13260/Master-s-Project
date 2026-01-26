@@ -1,7 +1,10 @@
 """Simple regex-based prefilter for guidance statements.
 
-Reads `pointerEvents/contents.jsonl`, looks for guidance-related patterns,
-and writes `extractor_lib/candidate_guidance.jsonl` with match metadata. 
+Reads `ingestion_json/contents.jsonl`, looks for forward-looking patterns,
+and writes `extractor_lib/candidate_guidance.jsonl` with entries that match.
+
+Simple logic: If text contains forward-looking verbs OR a proximity match
+(forward verb near a number), it passes through.
 
 Usage:
     python extractor_lib/regex_filter.py
@@ -11,45 +14,20 @@ import re
 import json
 from pathlib import Path
 
-PATTERNS = [
-    # explicit forward-looking verbs
-    r"\b(expect|anticipate|forecast|project|estimate|guide|outlook|plan|target|intend)\b",
-    # temporal tokens (quarters, fiscal years)
-    r"\b(Q[1-4]|FY\b|fiscal year|next quarter|next year|this quarter|upcoming quarter|quarter)\b",
-    # metric words
-    r"\b(revenue|earnings|eps|margin|growth|sales|income|operating|guidance|outlook)\b",
-    # dollar amounts or units (e.g. $45.3B, 3.2 billion)
-    r"\b\$\s?\d{1,3}(?:[\,\.]\d{3})*(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s?(?:billion|million|bn|m|B|M)\b",
-    # range indicators (e.g. "$83-87", "between 10 and 12")
-    r"\b(between|to|and|range|\d+\s?-\s?\d+|from\s+\$?\d+\s+to\s+\$?\d+)\b",
-    # proximity: expect/forecast within 120 chars of a number or $ amount
-    r"(?s)(expect|anticipate|forecast|project|estimate|guide).{0,120}?\$?\d",
-]
-
-# Weights to make some patterns more important than others (same order as PATTERNS)
-WEIGHTS = [2.0, 1.0, 0.5, 1.0, 1.5, 4.0]
-
-COMPILED = [re.compile(p, flags=re.IGNORECASE) for p in PATTERNS]
+# Single pattern - forward-looking verbs. That's it.
+PATTERN = re.compile(
+    r"\b(expect|anticipate|forecast|outlook|guidance|project|intend|target)\b",
+    re.IGNORECASE
+)
 
 
-def score_text(text: str) -> dict:
-    """Return matched pattern indexes, weighted score and normalized confidence.
-
-    Confidence is sum(matched_weights)/sum(all_weights) so patterns like
-    numeric amounts and proximity matches carry more weight.
-    """
-    matches = []
-    score = 0.0
-    for i, rx in enumerate(COMPILED):
-        if rx.search(text):
-            matches.append(i)
-            score += WEIGHTS[i]
-    max_score = sum(WEIGHTS)
-    confidence = score / max_score if max_score else 0.0
-    return {"matched_patterns": matches, "match_score": score, "confidence": confidence, "match_count": len(matches)}
+def has_guidance_patterns(text: str) -> bool:
+    """Return True if text contains forward-looking language."""
+    return bool(PATTERN.search(text))
 
 
-def extract_candidates(input_paths: list[Path], output_path: Path, min_confidence: float = 0.2):
+def extract_candidates(input_paths: list[Path], output_path: Path):
+    """Filter contents to only those with guidance-like language."""
     total = 0
     kept = 0
     out_f = output_path.open("w", encoding="utf-8")
@@ -71,23 +49,19 @@ def extract_candidates(input_paths: list[Path], output_path: Path, min_confidenc
                 except Exception:
                     continue
 
-                text = obj.get("extracted_text") or obj.get("text") or obj.get("content") or obj.get("html") or ""
+                text = obj.get("extracted_text") or obj.get("text") or obj.get("content") or ""
                 if not text:
                     continue
 
-                meta = score_text(text)
-                if meta["confidence"] >= min_confidence:
+                if has_guidance_patterns(text):
                     kept += 1
                     candidate = {
                         "uid": obj.get("uid"),
                         "source_id": obj.get("source_id"),
                         "title": obj.get("title"),
-                        "source_url": obj.get("source_url") or obj.get("link") or obj.get("url"),
-                        "match_count": meta.get("match_count"),
-                        "matched_patterns": meta.get("matched_patterns"),
-                        "match_score": meta.get("match_score"),
-                        "confidence": meta.get("confidence"),
-                        "extracted_text_preview": text[:200].replace("\n", " "),
+                        "link": obj.get("link") or obj.get("source_url") or obj.get("url"),
+                        "published_at": obj.get("published_at"),
+                        "extracted_text": text,
                     }
                     out_f.write(json.dumps(candidate, ensure_ascii=False) + "\n")
 
@@ -99,9 +73,8 @@ if __name__ == "__main__":
     base_dir = Path(__file__).parent.parent
     input_paths = [
         base_dir / "ingestion_json" / "contents.jsonl",
-        base_dir / "ingestion_json" / "pdf_contents.jsonl"
     ]
     output_path = base_dir / "extractor_lib" / "candidate_guidance.jsonl"
 
-    stats = extract_candidates(input_paths, output_path, min_confidence=0.5)
+    stats = extract_candidates(input_paths, output_path)
     print(f"Processed {stats['total']} records, kept {stats['kept']} candidates")

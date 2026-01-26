@@ -429,10 +429,25 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                 
             except Exception as e:
                 last_error = e
+                error_str = str(e).lower()
+                
+                # Check for rate limiting indicators
+                is_rate_limit = any(x in error_str for x in ['rate', 'limit', '429', 'too many', 'quota'])
+                is_connection_error = any(x in error_str for x in ['connection', 'timeout', 'timed out'])
                 
                 if attempt < self.max_retries - 1:
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                    print(f"  [RETRY] Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                    # Longer backoff for rate limits: 30s, 60s, 120s
+                    # Shorter for connection errors: 5s, 10s, 20s
+                    # Default: 2s, 4s, 8s
+                    if is_rate_limit:
+                        wait_time = 30 * (2 ** attempt)
+                        print(f"  [RATE LIMIT] Attempt {attempt + 1} failed. Waiting {wait_time}s...")
+                    elif is_connection_error:
+                        wait_time = 5 * (2 ** attempt)
+                        print(f"  [CONNECTION] Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                    else:
+                        wait_time = 2 * (2 ** attempt)
+                        print(f"  [RETRY] Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
                     print(f"  [ERROR] All {self.max_retries} attempts failed: {e}")

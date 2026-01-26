@@ -33,7 +33,7 @@ def main():
         run_step(f'"{python_exe}" ingestion_scripts/rss_guidance_ingest.py', "Ingesting RSS Feeds")
         
         # B. HTML Parse
-        run_step(f'"{python_exe}" ingestion_scripts/web_parse_trafilatura.py', "Parsing HTML Content")
+        run_step(f'"{python_exe}" ingestion_scripts/web_scraper.py', "Scraping Web Content")
 
     # 2. Filtering (Content -> Candidates)
     if not args.skip_filter:

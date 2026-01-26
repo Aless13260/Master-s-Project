@@ -60,7 +60,7 @@ python run_pipeline.py --max-items 10
 │
 ├── ingestion_scripts/       # Data fetching
 │   ├── rss_guidance_ingest.py   # RSS feed polling
-│   └── web_parse_trafilatura.py # HTML content extraction
+│   └── web_scraper.py           # SEC exhibit scraper
 │
 ├── extractor_lib/           # Core extraction logic
 │   ├── LLM_extractor.py     # LLM-based guidance extraction

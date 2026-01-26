@@ -5,7 +5,7 @@ import requests
 
 # Import centralized config
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import USER_AGENT, TIMEZONE
+from config import USER_AGENT, SEC_USER_AGENT, TIMEZONE
 
 TZ = zoneinfo.ZoneInfo(TIMEZONE)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -20,10 +20,17 @@ def load_feeds(path: str = str(PROJECT_ROOT / "sources.yaml")) -> List[Dict[str,
 def fetch_feed(url: str) -> bytes | None:
     """Fetch RSS feed bytes with polite headers & retries."""
     try:
-        headers = {
-            "User-Agent": USER_AGENT,
-            "Accept": "application/rss+xml, application/xml;q=0.9,*/*;q=0.8",
-        }
+        # SEC.gov requires specific User-Agent with contact info
+        if "sec.gov" in url.lower():
+            headers = {
+                "User-Agent": SEC_USER_AGENT,
+                "Accept": "application/atom+xml, application/rss+xml, application/xml;q=0.9,*/*;q=0.8",
+            }
+        else:
+            headers = {
+                "User-Agent": USER_AGENT,
+                "Accept": "application/rss+xml, application/xml;q=0.9,*/*;q=0.8",
+            }
         resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
         return resp.content
@@ -97,16 +104,16 @@ def iter_pointer_events(sources_path: str = "./sources.yaml", allow_all: bool = 
             is_guidance_candidate = False
             
             if not allow_all:
-                if filing_token in skip_types or any(st in title or st in summary for st in skip_types):
-                    # definitely skip ownership/insider filings and other noisy types
-                    continue
-
-                # Auto-pass ALL 8-K filings from dedicated 8-K feeds
+                # Auto-pass ALL 8-K filings from dedicated 8-K feeds (skip the filter entirely)
                 if is_8k_feed:
                     is_guidance_candidate = True
                 # Or if it's an 8-K with valuable items
                 elif is_8k_filing and has_valuable_item:
                     is_guidance_candidate = True
+                # For non-8K feeds, apply skip logic for ownership filings
+                elif filing_token in skip_types:
+                    # Skip Form 3/4/5 and other noisy ownership filings
+                    continue
                 # Otherwise require at least one positive guidance-like pattern
                 elif any(p in title or p in summary for p in guidance_patterns):
                     is_guidance_candidate = True
