@@ -96,14 +96,12 @@ def create_period_normalization_agent(
     
     This implements hierarchical reasoning:
     - Outer agent (agent_llm): decides WHEN to use tools, handles simple cases directly
-    - Inner reasoning (reasoning_llm): deep inference for genuinely ambiguous periods
+
     
     The agent autonomously decides which tools to use based on complexity.
 
     Args:
         agent_llm: LLM for the agent itself (must support function calling, e.g., deepseek-chat)
-        reasoning_llm: LLM for deep reasoning tool (can be a reasoning model, e.g., deepseek-reasoner).
-                       If None, falls back to agent_llm.
 
     Returns:
         FunctionAgent configured with period normalization tools

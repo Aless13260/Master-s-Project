@@ -62,7 +62,6 @@ class Guidance(GuidanceExtraction):
     extracted_at: Optional[str] = None  # When this guidance item was extracted (output created)
     processing_duration_seconds: Optional[float] = None  # Time taken for LLM processing in seconds
     extraction_method: Optional[Literal["standard", "agentic_review"]] = "standard"
-    was_updated_by_agent: Optional[bool] = False
 
     @field_validator("guid", mode="before")
     @classmethod

@@ -25,21 +25,20 @@ st.markdown("""
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Main container background */
+    /* Main container background - dark navy */
     .stApp {
-        background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #0d0d1f 100%);
+        background: #1a1f3c;
     }
     
-    /* Main header styling */
+    /* Main header styling - coral/salmon gradient */
     .main-header {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
+        background: linear-gradient(135deg, #e8b4a6 0%, #d4a99a 50%, #c99b8e 100%);
         padding: 2.5rem 2rem;
         border-radius: 20px;
         margin-bottom: 2rem;
-        color: white;
+        color: #2d3250;
         text-align: center;
-        box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
     }
     .main-header h1 {
         margin: 0;
@@ -47,34 +46,35 @@ st.markdown("""
         font-size: 2.8rem;
         font-weight: 700;
         letter-spacing: -0.02em;
-        text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        color: #2d3250;
     }
     .main-header p {
         margin: 0.75rem 0 0 0;
-        opacity: 0.9;
+        opacity: 0.8;
         font-size: 1.1rem;
         font-weight: 400;
+        color: #2d3250;
     }
     
-    /* Metric cards - each with unique gradient */
+    /* Metric cards - dark navy with subtle border */
     div[data-testid="stMetric"] {
-        background: linear-gradient(145deg, #1e1e3f 0%, #2a2a5a 100%);
+        background: #252b48;
         border-radius: 16px;
         padding: 1.25rem;
         border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     div[data-testid="stMetric"]:hover {
         transform: translateY(-2px);
-        box-shadow: 0 12px 40px rgba(99, 102, 241, 0.2);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     }
     div[data-testid="stMetric"] label {
-        color: #a5b4fc !important;
+        color: #8b9dc3 !important;
         font-weight: 600;
-        font-size: 0.85rem;
+        font-size: 0.75rem;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.08em;
     }
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
         color: #ffffff !important;
@@ -83,26 +83,18 @@ st.markdown("""
         font-size: 2rem;
     }
     
-    /* Color accents for metric cards */
-    div[data-testid="column"]:nth-child(1) div[data-testid="stMetric"] {
-        border-top: 3px solid #6366f1;
-    }
-    div[data-testid="column"]:nth-child(2) div[data-testid="stMetric"] {
-        border-top: 3px solid #8b5cf6;
-    }
-    div[data-testid="column"]:nth-child(3) div[data-testid="stMetric"] {
-        border-top: 3px solid #d946ef;
-    }
-    div[data-testid="column"]:nth-child(4) div[data-testid="stMetric"] {
-        border-top: 3px solid #f97316;
-    }
+    /* Remove individual card colors - use uniform dark style */
+    div[data-testid="column"]:nth-child(1) div[data-testid="stMetric"],
+    div[data-testid="column"]:nth-child(2) div[data-testid="stMetric"],
+    div[data-testid="column"]:nth-child(3) div[data-testid="stMetric"],
+    div[data-testid="column"]:nth-child(4) div[data-testid="stMetric"],
     div[data-testid="column"]:nth-child(5) div[data-testid="stMetric"] {
-        border-top: 3px solid #22d3ee;
+        background: #252b48;
     }
     
-    /* Sidebar styling */
+    /* Sidebar styling - darker navy */
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #12122a 0%, #1a1a3e 100%);
+        background: #151a30;
         border-right: 1px solid rgba(255, 255, 255, 0.05);
     }
     section[data-testid="stSidebar"] h3 {
@@ -111,37 +103,39 @@ st.markdown("""
     }
     section[data-testid="stSidebar"] .stSelectbox label,
     section[data-testid="stSidebar"] .stMultiSelect label {
-        color: #a5b4fc !important;
+        color: #d4a99a !important;
         font-weight: 600;
     }
     section[data-testid="stSidebar"] hr {
-        border-color: rgba(165, 180, 252, 0.2);
+        border-color: rgba(212, 169, 154, 0.2);
     }
     section[data-testid="stSidebar"] .stCheckbox label span {
         color: #e2e8f0 !important;
     }
     section[data-testid="stSidebar"] .stCaption {
-        color: #94a3b8 !important;
+        color: #8b9dc3 !important;
     }
     
     /* Multiselect and selectbox dark theme */
     .stMultiSelect > div, .stSelectbox > div {
-        background: rgba(30, 30, 63, 0.8) !important;
-        border: 1px solid rgba(99, 102, 241, 0.3) !important;
+        background: #252b48 !important;
+        border: 1px solid rgba(212, 169, 154, 0.3) !important;
         border-radius: 10px !important;
     }
     .stMultiSelect span[data-baseweb="tag"] {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+        background: linear-gradient(135deg, #d4a99a, #c99b8e) !important;
+        color: #2d3250 !important;
     }
     
-    /* Table section header */
+    /* Table section header - coral accent */
     .section-header {
-        background: linear-gradient(145deg, #1e1e3f 0%, #2a2a5a 100%);
+        background: #252b48;
         padding: 1rem 1.5rem;
         border-radius: 12px;
         margin: 2rem 0 1.5rem 0;
-        border-left: 4px solid #8b5cf6;
+        border-left: 4px solid #d4a99a;
         border: 1px solid rgba(255, 255, 255, 0.08);
+        border-left: 4px solid #d4a99a;
     }
     .section-header h3 {
         margin: 0;
@@ -159,15 +153,15 @@ st.markdown("""
     
     /* Info and warning boxes */
     .stAlert {
-        background: rgba(30, 30, 63, 0.8) !important;
-        border: 1px solid rgba(99, 102, 241, 0.3) !important;
+        background: #252b48 !important;
+        border: 1px solid rgba(212, 169, 154, 0.3) !important;
         border-radius: 12px !important;
     }
     
-    /* Download button */
+    /* Download button - coral theme */
     .stDownloadButton button {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
-        color: white !important;
+        background: linear-gradient(135deg, #d4a99a 0%, #c99b8e 100%) !important;
+        color: #2d3250 !important;
         border: none !important;
         border-radius: 10px !important;
         padding: 0.5rem 1.5rem !important;
@@ -176,19 +170,19 @@ st.markdown("""
     }
     .stDownloadButton button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4) !important;
+        box-shadow: 0 8px 20px rgba(212, 169, 154, 0.4) !important;
     }
     
     /* Caption text */
     .stCaption {
-        color: #94a3b8 !important;
+        color: #8b9dc3 !important;
     }
     
     /* Footer */
     .footer {
         text-align: center;
         padding: 3rem 2rem;
-        color: #64748b;
+        color: #8b9dc3;
         font-size: 0.9rem;
         border-top: 1px solid rgba(255, 255, 255, 0.05);
         margin-top: 2rem;
@@ -200,33 +194,33 @@ st.markdown("""
         height: 8px;
     }
     ::-webkit-scrollbar-track {
-        background: #1a1a3e;
+        background: #1a1f3c;
     }
     ::-webkit-scrollbar-thumb {
-        background: #6366f1;
+        background: #d4a99a;
         border-radius: 4px;
     }
     ::-webkit-scrollbar-thumb:hover {
-        background: #8b5cf6;
+        background: #e8b4a6;
     }
     
     /* Search box styling */
     .stTextInput > div > div {
-        background: rgba(30, 30, 63, 0.8) !important;
-        border: 1px solid rgba(99, 102, 241, 0.3) !important;
+        background: #252b48 !important;
+        border: 1px solid rgba(212, 169, 154, 0.3) !important;
         border-radius: 10px !important;
     }
     .stTextInput input {
         color: #e2e8f0 !important;
     }
     .stTextInput input::placeholder {
-        color: #64748b !important;
+        color: #8b9dc3 !important;
     }
     
     /* Date input styling */
     .stDateInput > div > div {
-        background: rgba(30, 30, 63, 0.8) !important;
-        border: 1px solid rgba(99, 102, 241, 0.3) !important;
+        background: #252b48 !important;
+        border: 1px solid rgba(212, 169, 154, 0.3) !important;
         border-radius: 10px !important;
     }
     .stDateInput input {
@@ -235,16 +229,11 @@ st.markdown("""
     
     /* Charts container */
     .chart-container {
-        background: linear-gradient(145deg, #1e1e3f 0%, #2a2a5a 100%);
+        background: #252b48;
         border-radius: 16px;
         padding: 1.5rem;
         border: 1px solid rgba(255, 255, 255, 0.08);
         margin-bottom: 1.5rem;
-    }
-    
-    /* Revision row highlighting */
-    .revision-row {
-        background: rgba(251, 191, 36, 0.1) !important;
     }
     
     /* Tabs styling */
@@ -253,15 +242,43 @@ st.markdown("""
         background: transparent;
     }
     .stTabs [data-baseweb="tab"] {
-        background: rgba(30, 30, 63, 0.6);
+        background: #252b48;
         border-radius: 8px;
-        color: #a5b4fc;
-        border: 1px solid rgba(99, 102, 241, 0.2);
+        color: #8b9dc3;
+        border: 1px solid rgba(212, 169, 154, 0.2);
         padding: 0.5rem 1rem;
     }
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
-        color: white !important;
+        background: linear-gradient(135deg, #d4a99a 0%, #c99b8e 100%) !important;
+        color: #2d3250 !important;
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background: #252b48 !important;
+        border-radius: 10px !important;
+        color: #e2e8f0 !important;
+    }
+    .streamlit-expanderContent {
+        background: #1a1f3c !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    }
+    
+    /* Text area for SQL */
+    .stTextArea textarea {
+        background: #252b48 !important;
+        color: #e2e8f0 !important;
+        border: 1px solid rgba(212, 169, 154, 0.3) !important;
+        border-radius: 10px !important;
+    }
+    
+    /* Button styling */
+    .stButton button {
+        background: linear-gradient(135deg, #d4a99a 0%, #c99b8e 100%) !important;
+        color: #2d3250 !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -354,23 +371,23 @@ def create_excel_download(df):
     return output.getvalue()
 
 def get_guidance_type_colors():
-    """Color palette for guidance types"""
+    """Color palette for guidance types - rainbow for distinction"""
     return {
-        'revenue': '#6366f1',
-        'earnings': '#8b5cf6', 
-        'EPS': '#d946ef',
-        'margin': '#f97316',
-        'capex': '#22d3ee',
-        'opex': '#10b981',
-        'cash_flow': '#f43f5e',
-        'ebitda': '#fbbf24',
-        'other': '#64748b'
+        'revenue': '#f97316',      # orange
+        'earnings': '#eab308',     # yellow
+        'EPS': '#22c55e',          # green
+        'margin': '#06b6d4',       # cyan
+        'capex': '#3b82f6',        # blue
+        'opex': '#8b5cf6',         # violet
+        'cash_flow': '#ec4899',    # pink
+        'ebitda': '#ef4444',       # red
+        'other': '#94a3b8'         # slate
     }
 
 # Header
 st.markdown("""
 <div class="main-header">
-    <h1>📊 Corporate Guidance Tracker</h1>
+    <h1>Corporate Guidance Tracker</h1>
     <p>Monitor forward-looking statements and financial guidance from corporate filings</p>
 </div>
 """, unsafe_allow_html=True)
@@ -385,12 +402,12 @@ try:
     else:
         # Sidebar Filters
         with st.sidebar:
-            st.markdown("### 🔍 Filters")
+            st.markdown("### Filters")
             st.markdown("---")
             
             # Search box
             search_query = st.text_input(
-                "🔎 Search",
+                "Search",
                 placeholder="Search companies, metrics...",
                 help="Search across all columns"
             )
@@ -398,7 +415,7 @@ try:
             st.markdown("---")
             
             # Date Range Filter
-            st.markdown("##### 📆 Date Range")
+            st.markdown("##### Date Range")
             
             # Get date range from data
             df['Published_dt'] = pd.to_datetime(df['Published'], errors='coerce', utc=True)
@@ -432,7 +449,7 @@ try:
             # Ticker Filter
             tickers = sorted(df['Ticker'].dropna().unique().tolist())
             selected_tickers = st.multiselect(
-                "📊 Tickers",
+                "Tickers",
                 options=tickers,
                 default=[],
                 placeholder="All tickers"
@@ -441,7 +458,7 @@ try:
             # Guidance Type Filter
             guidance_types = sorted(df['Type'].dropna().unique().tolist())
             selected_types = st.multiselect(
-                "📋 Guidance Types",
+                "Guidance Types",
                 options=guidance_types,
                 default=[],
                 placeholder="All types"
@@ -450,7 +467,7 @@ try:
             # Period Filter
             periods = sorted(df['Period'].dropna().unique().tolist())
             selected_periods = st.multiselect(
-                "📅 Reporting Periods",
+                "Reporting Periods",
                 options=periods,
                 default=[],
                 placeholder="All periods"
@@ -458,13 +475,7 @@ try:
             
             # Revision filter
             st.markdown("---")
-            show_revisions_only = st.checkbox("📝 Show revisions only", value=False)
-            
-            st.markdown("---")
-            st.markdown("### 📊 Quick Stats")
-            st.caption(f"**Database:** {len(df)} total records")
-            st.caption(f"**Tickers:** {df['Ticker'].nunique()}")
-            st.caption(f"**Date Range:** {format_date(df['Published'].min())} to {format_date(df['Published'].max())}")
+            show_revisions_only = st.checkbox("Show revisions only", value=False)
         
         # Apply filters
         filtered_df = df.copy()
@@ -509,29 +520,29 @@ try:
         
         with col1:
             st.metric(
-                label="📄 Guidance Events",
+                label="Guidance Events",
                 value=f"{len(filtered_df):,}"
             )
         with col2:
             st.metric(
-                label="📊 Tickers",
+                label="Companies",
                 value=filtered_df['Ticker'].nunique()
             )
         with col3:
             st.metric(
-                label="📊 Unique Metrics",
+                label="Unique Metrics",
                 value=filtered_df['Metric'].nunique()
             )
         with col4:
             revision_count = filtered_df['Is Revision'].sum() if 'Is Revision' in filtered_df.columns else 0
             st.metric(
-                label="📝 Revisions",
+                label="Revisions",
                 value=int(revision_count)
             )
         with col5:
             latest_date = pd.to_datetime(filtered_df['Published'], errors='coerce', utc=True).max()
             st.metric(
-                label="🕐 Latest Update",
+                label="Latest Update",
                 value=format_date(latest_date) if pd.notnull(latest_date) else "N/A"
             )
 
@@ -542,9 +553,11 @@ try:
         with chart_col1:
             st.markdown("""
             <div class="section-header">
-                <h3>📊 Guidance by Type</h3>
+                <h3>Guidance by Type</h3>
             </div>
             """, unsafe_allow_html=True)
+            
+            st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
             
             # Donut chart data
             type_counts = filtered_df['Type'].value_counts()
@@ -558,7 +571,7 @@ try:
                 chart_data['Color'] = chart_data['Type'].map(colors).fillna('#64748b')
                 chart_data['Percentage'] = (chart_data['Count'] / chart_data['Count'].sum() * 100).round(1)
                 
-                donut = alt.Chart(chart_data).mark_arc(innerRadius=50, outerRadius=80).encode(
+                donut = alt.Chart(chart_data).mark_arc(innerRadius=60, outerRadius=100).encode(
                     theta=alt.Theta(field="Count", type="quantitative"),
                     color=alt.Color(
                         field="Type",
@@ -576,7 +589,8 @@ try:
                     ),
                     tooltip=['Type', 'Count', 'Percentage']
                 ).properties(
-                    height=250
+                    height=320,
+                    padding={'top': 30, 'bottom': 10, 'left': 10, 'right': 10}
                 ).configure_view(
                     strokeWidth=0
                 ).configure(
@@ -588,7 +602,7 @@ try:
         with chart_col2:
             st.markdown("""
             <div class="section-header">
-                <h3>📈 Guidance Activity Timeline</h3>
+                <h3>Activity Timeline</h3>
             </div>
             """, unsafe_allow_html=True)
             
@@ -606,11 +620,11 @@ try:
                     area_chart = alt.Chart(weekly_counts).mark_area(
                         opacity=0.7,
                         interpolate='monotone',
-                        color='#8b5cf6',
-                        line={'color': '#a78bfa', 'strokeWidth': 2}
+                        color='#d4a99a',
+                        line={'color': '#e8b4a6', 'strokeWidth': 2}
                     ).encode(
-                        x=alt.X('Week:T', title='', axis=alt.Axis(labelColor='#a5b4fc', format='%b %Y')),
-                        y=alt.Y('Count:Q', title='Events', axis=alt.Axis(labelColor='#a5b4fc')),
+                        x=alt.X('Week:T', title='', axis=alt.Axis(labelColor='#8b9dc3', format='%b %Y')),
+                        y=alt.Y('Count:Q', title='Events', axis=alt.Axis(labelColor='#8b9dc3')),
                         tooltip=['Week:T', 'Count']
                     ).properties(
                         height=220
@@ -619,7 +633,7 @@ try:
                     ).configure(
                         background='transparent'
                     ).configure_axis(
-                        gridColor='rgba(165, 180, 252, 0.1)'
+                        gridColor='rgba(139, 157, 195, 0.1)'
                     )
                     
                     st.altair_chart(area_chart, use_container_width=True)
@@ -629,7 +643,7 @@ try:
         # Data Table Section
         st.markdown("""
         <div class="section-header">
-            <h3>📋 Guidance Events Table</h3>
+            <h3>Guidance Events</h3>
         </div>
         """, unsafe_allow_html=True)
         
@@ -686,20 +700,12 @@ try:
                 "Source": st.column_config.LinkColumn(
                     "Source",
                     width="small",
-                    display_text="🔗 View"
+                    display_text="View"
                 ),
             }
             
-            # Display the dataframe with revision highlighting
-            def highlight_revisions(row):
-                if row.get('Is Revision') == 'Yes':
-                    return ['background-color: rgba(251, 191, 36, 0.15)'] * len(row)
-                return [''] * len(row)
-            
-            styled_df = display_df.style.apply(highlight_revisions, axis=1)
-            
             st.dataframe(
-                styled_df,
+                display_df,
                 column_config=column_config,
                 hide_index=True,
                 use_container_width=True,
@@ -712,7 +718,7 @@ try:
             with col_dl1:
                 csv = filtered_df.to_csv(index=False)
                 st.download_button(
-                    label="📥 CSV",
+                    label="Download CSV",
                     data=csv,
                     file_name=f"guidance_export_{datetime.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv"
@@ -721,13 +727,13 @@ try:
                 try:
                     excel_data = create_excel_download(filtered_df)
                     st.download_button(
-                        label="📊 Excel",
+                        label="Download Excel",
                         data=excel_data,
                         file_name=f"guidance_export_{datetime.now().strftime('%Y%m%d')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                 except Exception as e:
-                    st.button("📊 Excel", disabled=True, help="Install openpyxl for Excel export")
+                    st.button("Download Excel", disabled=True, help="Install openpyxl for Excel export")
             with col_dl3:
                 st.caption(f"Showing {len(display_df):,} of {len(df):,} records")
         
@@ -735,7 +741,7 @@ try:
         if len(filtered_df) > 0 and filtered_df['Ticker'].nunique() <= 20:
             st.markdown("""
             <div class="section-header">
-                <h3>📉 Guidance Trends by Ticker</h3>
+                <h3>Trends by Ticker</h3>
             </div>
             """, unsafe_allow_html=True)
             
@@ -755,15 +761,15 @@ try:
                         strokeWidth=2,
                         point=alt.OverlayMarkDef(size=30)
                     ).encode(
-                        x=alt.X('Month:T', title='', axis=alt.Axis(labelColor='#a5b4fc', format='%b')),
-                        y=alt.Y('Count:Q', title='Events', axis=alt.Axis(labelColor='#a5b4fc')),
+                        x=alt.X('Month:T', title='', axis=alt.Axis(labelColor='#8b9dc3', format='%b')),
+                        y=alt.Y('Count:Q', title='Events', axis=alt.Axis(labelColor='#8b9dc3')),
                         color=alt.Color(
                             'Ticker:N',
-                            scale=alt.Scale(scheme='plasma'),
+                            scale=alt.Scale(scheme='brownbluegreen'),
                             legend=alt.Legend(
                                 orient='bottom',
                                 columns=4,
-                                labelColor='#a5b4fc'
+                                labelColor='#8b9dc3'
                             )
                         ),
                         tooltip=['Month:T', 'Ticker', 'Count']
@@ -774,15 +780,65 @@ try:
                     ).configure(
                         background='transparent'
                     ).configure_axis(
-                        gridColor='rgba(165, 180, 252, 0.1)'
+                        gridColor='rgba(139, 157, 195, 0.1)'
                     )
                     
                     st.altair_chart(sparklines, use_container_width=True)
 
+        # SQL Query Section
+        st.markdown("""
+        <div class="section-header">
+            <h3>Custom SQL Query</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.expander("Run custom SQL queries", expanded=False):
+            st.caption("Available tables: `guidance`, `contents`. Use SELECT queries only.")
+            
+            default_query = """SELECT 
+    g.ticker, 
+    g.guidance_type, 
+    g.metric_name,
+    g.reporting_period,
+    g.guided_range_low,
+    g.guided_range_high,
+    g.unit
+FROM guidance g
+LIMIT 100"""
+            
+            sql_query = st.text_area(
+                "SQL Query",
+                value=default_query,
+                height=150,
+                label_visibility="collapsed"
+            )
+            
+            if st.button("Run Query"):
+                if sql_query.strip().lower().startswith("select"):
+                    try:
+                        conn = get_connection()
+                        result_df = pd.read_sql_query(sql_query, conn)
+                        conn.close()
+                        st.success(f"Returned {len(result_df)} rows")
+                        st.dataframe(result_df, use_container_width=True, height=400)
+                        
+                        # Download option
+                        csv = result_df.to_csv(index=False)
+                        st.download_button(
+                            "Download Result",
+                            data=csv,
+                            file_name="query_result.csv",
+                            mime="text/csv"
+                        )
+                    except Exception as e:
+                        st.error(f"Query error: {e}")
+                else:
+                    st.warning("Only SELECT queries are allowed for safety.")
+
         # Footer
         st.markdown("""
         <div class="footer">
-            <p>Data sourced from SEC filings and corporate announcements • Updated automatically</p>
+            <p>Data sourced from SEC filings and corporate announcements</p>
         </div>
         """, unsafe_allow_html=True)
 

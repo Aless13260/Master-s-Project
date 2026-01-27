@@ -64,7 +64,7 @@ class MultiGuidanceExtraction(BaseModel):
 class LLMExtractor:
     """Extract financial guidance using an LLM with structured output."""
     
-    def __init__(self, provider: str = "deepseek", model: str = None, temperature: float = 0.0, max_retries: int = 3, verbose: bool = True):
+    def __init__(self, provider: str = "deepseek", model: str = None, temperature: float = 0.0, max_retries: int = 3, verbose: bool = True, period_agent=None):
         """
         Initialize the extractor.
         
@@ -74,6 +74,7 @@ class LLMExtractor:
             temperature: 0.0 for deterministic extraction
             max_retries: Number of retry attempts for failed LLM calls
             verbose: Whether to print setup messages (default: True)
+            period_agent: Pre-created period normalization agent (for thread sharing)
         """
         self.verbose = verbose
         # store config so we can reconfigure on errors (e.g., rate limits)
@@ -104,8 +105,8 @@ class LLMExtractor:
 
         self.max_retries = max_retries
 
-        # Period normalization agent (lazy-loaded, only created if needed)
-        self._period_agent = None
+        # Period normalization agent (can be pre-created and shared across threads)
+        self._period_agent = period_agent
 
         # System prompt for extraction
         # NOTE: the field names below match the Guidance pydantic model in
@@ -197,8 +198,9 @@ class LLMExtractor:
         """Lazy-load the period normalization agent with hierarchical LLM setup."""
         if self._period_agent is None:
             try:
-                print("  [AGENT] Creating period normalization agent...")
-                print(f"    - Agent LLM (tool-calling): {self._tool_llm_name}")
+                if self.verbose:
+                    print("  [AGENT] Creating period normalization agent...")
+                    print(f"    - Agent LLM (tool-calling): {self._tool_llm_name}")
                 # Hierarchical setup:
                 # - agent_llm: deepseek-chat (supports function calling)
                 self._period_agent = create_period_normalization_agent(
@@ -300,7 +302,7 @@ class LLMExtractor:
         # rather than historical results that appear before them.
         # Give minimal preceding context, but substantial trailing context.
         pre_context = 100  # Just enough to capture the intro phrase
-        post_context = 800  # Focus on what comes AFTER the guidance keyword
+        post_context = 500  # Captures statement + rationale without bleeding into unrelated content
         for pattern in GUIDANCE_KEYWORDS:
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 start = max(0, match.start() - pre_context)
@@ -642,6 +644,7 @@ def main():
     parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
     parser.add_argument("--enhanced", action="store_true", help="Enable agentic period normalization (slower but more accurate)")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers to use")
+    parser.add_argument("--resume", action="store_true", help="Resume from previous run, skip already-processed UIDs")
     
     args = parser.parse_args()
 
@@ -668,6 +671,16 @@ def main():
         model=args.model,
         max_retries=args.max_retries
     )
+    
+    # Pre-create shared agent if using enhanced mode (thread-safe, create once)
+    shared_agent = None
+    if args.enhanced:
+        print("Pre-creating shared period normalization agent...")
+        shared_agent = extractor.period_agent  # Triggers lazy creation once
+        if shared_agent:
+            print("  ✓ Agent ready for all workers")
+        else:
+            print("  ✗ Agent creation failed, falling back to regex normalization")
     print()
     
     # Load data
@@ -676,12 +689,37 @@ def main():
     
     print("Loading full text content...")
     contents = load_contents_for_candidates(candidates)
+    
+    # Resume logic: load already-processed UIDs
+    processed_uids = set()
+    if args.resume and args.output.exists():
+        print(f"Resuming from {args.output}...")
+        with open(args.output, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    record = json.loads(line)
+                    processed_uids.add(record.get('uid'))
+                except:
+                    pass
+        print(f"  Found {len(processed_uids)} already-processed UIDs")
+        # Filter candidates to only unprocessed ones
+        original_count = len(candidates)
+        candidates = [c for c in candidates if c['uid'] not in processed_uids]
+        print(f"  Skipping {original_count - len(candidates)}, {len(candidates)} remaining")
     print()
     
     # Extract guidance
     print("Starting parallel extraction...")
     print(f"Using {args.workers} workers")
     print("-" * 60)
+    
+    # Thread-safe incremental saving
+    import threading
+    output_lock = threading.Lock()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    # Open in append mode for incremental saves (or write mode if not resuming)
+    output_mode = 'a' if args.resume and args.output.exists() else 'w'
+    output_file = open(args.output, output_mode, encoding='utf-8')
     
     all_extractions = []
     success_count = 0
@@ -693,7 +731,7 @@ def main():
     
     def process_candidate(candidate_data):
         """Process a single candidate - returns (success, extraction_records, error_msg)"""
-        i, candidate, contents = candidate_data
+        i, candidate, contents, shared_agent = candidate_data
         uid = candidate['uid']
         title = candidate.get('title', 'N/A')
         
@@ -707,19 +745,20 @@ def main():
                 return (False, [], f"Empty text for {uid}")
             
             metadata = {
-                'source_url': candidate.get('source_url'),
+                'source_url': content_record.get('source_url') or candidate.get('source_url') or candidate.get('link'),
                 'published_at': content_record.get('published_at'),
                 'fetched_at': content_record.get('fetched_at'),
                 'source_id': candidate.get('source_id')
             }
             
             # Create a NEW extractor instance per thread to avoid race conditions
-            # This is safer than sharing one instance across threads
+            # But SHARE the pre-created agent (thread-safe for inference)
             thread_extractor = LLMExtractor(
                 provider=args.provider,
                 model=args.model,
                 max_retries=args.max_retries,
-                verbose=False  # Suppress per-thread LLM setup messages
+                verbose=False,  # Suppress per-thread LLM setup messages
+                period_agent=shared_agent  # Share pre-created agent across threads
             )
             
             if args.enhanced:
@@ -754,7 +793,7 @@ def main():
             return (False, [], str(e))
 
     # Prepare candidate data with indices
-    candidate_data = [(i+1, cand, contents) for i, cand in enumerate(candidates)]
+    candidate_data = [(i+1, cand, contents, shared_agent) for i, cand in enumerate(candidates)]
 
     # Process with ThreadPool
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
@@ -763,7 +802,7 @@ def main():
         
         for future in as_completed(futures):
             # Retrieve original data to print progress
-            i, candidate, _ = futures[future]
+            i, candidate, _, _ = futures[future]
             uid = candidate['uid']
             title = candidate.get('title', 'N/A')[:80]
             
@@ -775,7 +814,12 @@ def main():
                 if success:
                     success_count += 1
                     all_extractions.extend(records)
-                    print(f"  ✓ Extracted {len(records)} items")
+                    # Incremental save - write immediately with thread lock
+                    with output_lock:
+                        for record in records:
+                            output_file.write(json.dumps(record) + '\n')
+                        output_file.flush()  # Ensure written to disk
+                    print(f"  ✓ Extracted {len(records)} items (saved)")
                 else:
                     error_count += 1
                     print(f"  ✗ {error_msg}")
@@ -783,24 +827,24 @@ def main():
                 error_count += 1
                 print(f"  ✗ Critical error in thread: {e}")
         
-    # Save results
+    # Close output file
+    output_file.close()
+    
+    # Final stats
     print()
     print("-" * 60)
     print(f"Extraction complete!")
     print(f"  Successful: {success_count}/{len(candidates)}")
     print(f"  Errors: {error_count}/{len(candidates)}")
-    print(f"  Total guidance items: {len(all_extractions)}")
+    print(f"  Total guidance items (this run): {len(all_extractions)}")
+    if args.resume and processed_uids:
+        print(f"  Previously processed: {len(processed_uids)}")
     print()
     
-    if all_extractions:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        with open(args.output, 'w', encoding='utf-8') as f:
-            for record in all_extractions:
-                f.write(json.dumps(record) + '\n')
-        
-        print(f"Saved {len(all_extractions)} guidance items to: {args.output}")
+    if all_extractions or (args.resume and processed_uids):
+        print(f"Results saved incrementally to: {args.output}")
     else:
-        print("No guidance items extracted. No output file created.")
+        print("No guidance items extracted.")
     
     print("=" * 60)
 
