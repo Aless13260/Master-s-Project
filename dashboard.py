@@ -292,10 +292,11 @@ def get_connection():
 def load_data():
     conn = get_connection()
     query = """
-    SELECT 
+    SELECT
         g.ticker AS "Ticker",
         g.guidance_type AS "Type",
         g.metric_name AS "Metric",
+        g.gaap_type AS "GAAP Type",
         g.reporting_period AS "Period",
         g.guided_range_low AS "Range Low",
         g.guided_range_high AS "Range High",
@@ -472,7 +473,16 @@ try:
                 default=[],
                 placeholder="All periods"
             )
-            
+
+            # GAAP Type Filter
+            gaap_types = sorted(df['GAAP Type'].dropna().unique().tolist())
+            selected_gaap_types = st.multiselect(
+                "GAAP Type",
+                options=gaap_types,
+                default=[],
+                placeholder="All (GAAP & non-GAAP)"
+            )
+
             # Revision filter
             st.markdown("---")
             show_revisions_only = st.checkbox("Show revisions only", value=False)
@@ -511,6 +521,8 @@ try:
             filtered_df = filtered_df[filtered_df['Type'].isin(selected_types)]
         if selected_periods:
             filtered_df = filtered_df[filtered_df['Period'].isin(selected_periods)]
+        if selected_gaap_types:
+            filtered_df = filtered_df[filtered_df['GAAP Type'].isin(selected_gaap_types)]
         if show_revisions_only:
             filtered_df = filtered_df[filtered_df['Is Revision'] == 1]
 
@@ -675,6 +687,7 @@ try:
                 'Ticker',
                 'Type',
                 'Metric',
+                'GAAP Type',
                 'Period',
                 'Guided Range',
                 'Direction',
@@ -691,6 +704,7 @@ try:
                 "Ticker": st.column_config.TextColumn("Ticker", width="small"),
                 "Type": st.column_config.TextColumn("Type", width="small"),
                 "Metric": st.column_config.TextColumn("Metric", width="large"),
+                "GAAP Type": st.column_config.TextColumn("GAAP", width="small"),
                 "Period": st.column_config.TextColumn("Period", width="small"),
                 "Guided Range": st.column_config.TextColumn("Guided Range", width="medium"),
                 "Direction": st.column_config.TextColumn("Direction", width="small"),

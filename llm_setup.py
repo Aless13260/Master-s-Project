@@ -1,14 +1,11 @@
 """
 LLM setup and configuration for guidance extraction.
-Supports GitHub Models, OpenAI, Anthropic, and Ollama (local).
+Supports DeepSeek, Gemini, OpenAI, Anthropic, GitHub Models.
 """
 
 import os
 from dotenv import load_dotenv
 from llama_index.core import Settings
-from llama_index.llms.deepseek import DeepSeek
-from llama_index.llms.openai import OpenAI
-
 
 load_dotenv()
 
@@ -16,97 +13,129 @@ load_dotenv()
 def setup_llm(provider="deepseek", model=None, temperature=0.0, timeout=120.0, verbose=True):
     """
     Configure LlamaIndex with the specified LLM provider.
-    
+
+    Providers:
+        "deepseek"   — DeepSeek V3 (default, cheap, strong extraction)
+        "gemini"     — Gemini 2.5 Flash (★ best for elaborate prompts / long context)
+        "openai"     — OpenAI direct (GPT-4.1 mini recommended)
+        "anthropic"  — Claude Haiku 4.5 (fastest Claude, good throughput)
+        "github"     — GitHub Models free tier (GPT-4o family)
+
     Args:
-        provider: "deepseek", "github", "openai", "anthropic", or "ollama"
-        model: Specific model name (or None for defaults)
-        temperature: 0.0 for deterministic, higher for creative
-        timeout: Request timeout in seconds (default: 120.0)
-        verbose: Whether to print LLM setup messages (default: True)
-    
+        provider:    One of the providers listed above.
+        model:       Override the default model for the provider.
+        temperature: 0.0 for deterministic extraction.
+        timeout:     Request timeout in seconds.
+        verbose:     Print setup info.
+
     Returns:
-        Configured LLM instance
+        Configured LLM instance (also set as LlamaIndex global default).
     """
-    
+
     if provider == "deepseek":
-        api_key_deepseek = os.getenv("DEEPSEEK_API_KEY")
-        if not api_key_deepseek:
-            raise ValueError("DEEPSEEK_API_KEY not found in .env file")
-        
-        model = model or "deepseek-chat"  # Fast and free
-        
+        from llama_index.llms.deepseek import DeepSeek
+
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise ValueError("DEEPSEEK_API_KEY not set in .env")
+
+        model = model or "deepseek-chat"
         llm = DeepSeek(
-            api_key=api_key_deepseek,
+            api_key=api_key,
             model=model,
             temperature=temperature,
             timeout=timeout,
         )
-        if verbose:
-            print(f"[LLM] Using DeepSeek: {model} (timeout={timeout}s)")
-    
-    elif provider == "github":
-        api_key_chatGPT = os.getenv("GITHUB_MODELS_API_KEY") or os.getenv("OPENAI_API_KEY")
-        if not api_key_chatGPT:
-            raise ValueError("GITHUB_MODELS_API_KEY or OPENAI_API_KEY not found in .env file")
-        
-        model = model or "gpt-4o-mini"  # Cheaper, faster for extraction
-        
-        llm = OpenAI(
-            api_key=api_key_chatGPT,
+
+    elif provider == "gemini":
+        from llama_index.llms.google_genai import GoogleGenAI
+
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY not set in .env  — get one at https://aistudio.google.com/app/apikey")
+
+        model = model or "gemini-2.5-flash"
+        llm = GoogleGenAI(
+            api_key=api_key,
             model=model,
             temperature=temperature,
-            timeout=timeout,
         )
-        if verbose:
-            print(f"[LLM] Using GitHub Models: {model} (timeout={timeout}s)")
-    
+
     elif provider == "openai":
-        # Direct OpenAI API - uses separate key from GitHub Models
+        from llama_index.llms.openai import OpenAI
+
         api_key = os.getenv("OPENAI_DIRECT_API_KEY")
         if not api_key:
-            raise ValueError("OPENAI_DIRECT_API_KEY not found in .env file. Get one from https://platform.openai.com/api-keys")
-        
-        model = model or "gpt-5"  # Default to gpt-5.2
-        
+            raise ValueError("OPENAI_DIRECT_API_KEY not set in .env  — get one at https://platform.openai.com/api-keys")
+
+        model = model or "gpt-4.1-mini"
         llm = OpenAI(
             api_key=api_key,
             model=model,
             temperature=temperature,
             timeout=timeout,
-            api_base="https://api.openai.com/v1",  # Direct OpenAI endpoint
+            api_base="https://api.openai.com/v1",
         )
-        if verbose:
-            print(f"[LLM] Using OpenAI Direct: {model} (timeout={timeout}s)")
-    
+
+    elif provider == "anthropic":
+        from llama_index.llms.anthropic import Anthropic
+
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY not set in .env  — get one at https://console.anthropic.com/settings/keys")
+
+        model = model or "claude-haiku-4-5-20251001"
+        llm = Anthropic(
+            api_key=api_key,
+            model=model,
+            temperature=temperature,
+            timeout=timeout,
+        )
+
+    elif provider == "github":
+        from llama_index.llms.openai import OpenAI
+
+        api_key = os.getenv("GITHUB_MODELS_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("GITHUB_MODELS_API_KEY not set in .env  — get a token at https://github.com/settings/tokens")
+
+        model = model or "gpt-4o-mini"
+        llm = OpenAI(
+            api_key=api_key,
+            model=model,
+            temperature=temperature,
+            timeout=timeout,
+            api_base="https://models.inference.ai.azure.com",
+        )
+
     else:
-        raise ValueError(f"Unknown provider: {provider}. Use 'github', 'openai', 'anthropic', or 'ollama'")
-    
-    # Set as global default for LlamaIndex
+        raise ValueError(
+            f"Unknown provider: '{provider}'. "
+            "Use 'deepseek', 'gemini', 'openai', 'anthropic', or 'github'."
+        )
+
+    if verbose:
+        print(f"[LLM] provider={provider}  model={model}  temperature={temperature}  timeout={timeout}s")
+
     Settings.llm = llm
-    
     return llm
 
 
 def test_llm(llm):
-    """Quick test to verify LLM is working."""
+    """Quick connectivity test."""
     print("\n[TEST] Testing LLM connection...")
-    
     response = llm.complete("Say 'Hello, I am working!' in exactly 5 words.")
     print(f"[TEST] Response: {response.text}")
-    
     return response
 
 
-
 if __name__ == "__main__":
-    # Test different providers
-    print("=== LLM Setup Test ===\n")
-    
-    # Try DeepSeek first (recommended, free)
-    try:
-        llm = setup_llm(provider="deepseek")
-        test_llm(llm)
-    except Exception as e:
-        print(f"[WARN] DeepSeek setup failed: {e}")
-    
-  
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Test an LLM provider")
+    parser.add_argument("--provider", default="deepseek", help="Provider to test")
+    parser.add_argument("--model", default=None, help="Model override")
+    args = parser.parse_args()
+
+    llm = setup_llm(provider=args.provider, model=args.model)
+    test_llm(llm)

@@ -16,7 +16,7 @@ evaluation/*.jsonl
 *.db
 *.sqlite
 *.csv
-
+*.png
 # Keep these essential static files (override above patterns)
 !extractor_lib/fiscal_calendars.json
 !evaluation/ground_truth/*.jsonl
@@ -27,3 +27,6 @@ tools/
 
 # Backup files
 *.bak
+.claude/settings.local.json
+.env.example
+.env.example

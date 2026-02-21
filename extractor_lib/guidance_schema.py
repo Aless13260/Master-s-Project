@@ -24,6 +24,9 @@ class GuidanceExtraction(BaseModel):
     # The specific metric name mentioned in text (e.g. "Net Interest Income", "Cloud Revenue")
     metric_name: Optional[str] = None
 
+    # GAAP classification - whether the metric is reported under GAAP, non-GAAP (adjusted), or unspecified
+    gaap_type: Optional[Literal["GAAP", "non-GAAP"]] = None
+
     # Temporal context
     reporting_period: Optional[str] = None
 

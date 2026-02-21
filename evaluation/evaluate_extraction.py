@@ -15,6 +15,7 @@ TEST_PATH = Path("evaluation") / "extracted_on_gt.jsonl"
 COMPARE_FIELDS = [
     "guidance_type",
     "metric_name",
+    "gaap_type",
     "reporting_period",
     "current_value",
     "unit",
@@ -153,6 +154,18 @@ def normalize_unit(u):
         return 'billion'
     if s in ['m', 'mn', 'millions']:
         return 'million'
+    return s
+
+def normalize_gaap_type(g):
+    """Normalize GAAP type for comparison."""
+    s = normalize_string(g)
+    if not s:
+        return None
+    # Map variations to canonical values
+    if s in ['gaap', 'standard']:
+        return 'gaap'
+    if s in ['non-gaap', 'nongaap', 'non gaap', 'adjusted', 'core', 'organic', 'pro forma', 'normalized']:
+        return 'non-gaap'
     return s
 
 def load_jsonl(path):
@@ -411,6 +424,20 @@ def score_item(gt, pred, track_field=None):
         elif field == 'metric_name':
             if normalize_metric(gt_val) == normalize_metric(pred_val):
                 is_match = True
+        elif field == 'gaap_type':
+            gt_normalized = normalize_gaap_type(gt_val)
+            pred_normalized = normalize_gaap_type(pred_val)
+            if gt_normalized == pred_normalized:
+                is_match = True
+            elif track_field == 'gaap_type':
+                mismatch_info = {
+                    'gt_raw': gt_val,
+                    'pred_raw': pred_val,
+                    'gt_normalized': gt_normalized,
+                    'pred_normalized': pred_normalized,
+                    'ticker': gt.get('ticker'),
+                    'metric': gt.get('metric_name'),
+                }
         elif field == 'unit':
             gt_normalized = normalize_unit(gt_val)
             pred_normalized = normalize_unit(pred_val)

@@ -12,9 +12,10 @@ Two-stage normalization:
 
 Standard formats:
 - Fiscal Year: "FY2025"
-- Fiscal Quarter: "Q1 FY2025" 
+- Fiscal Quarter: "Q1 FY2025"
 - Half-Year: "H1 FY2025"
 - Multi-Year: "FY2021-FY2024"
+- Open-ended: "FY2025+" (guidance anchored to a start year with no end)
 """
 
 from typing import Optional, Dict, Any
@@ -197,13 +198,48 @@ def create_period_normalization_agent(
         except Exception as e:
             return f"Unable to determine fiscal context: {e}"
 
+    def date_to_fiscal_quarter(ticker: str, date_str: str) -> str:
+        """
+        Convert a point-in-time calendar date to the fiscal quarter for a company.
+        Use this for statements like "as of September 30, 2024" or "at December 31, 2023".
+
+        Args:
+            ticker: Company ticker or name (used for fiscal calendar lookup)
+            date_str: Date string, e.g. "September 30, 2024" or "2024-09-30"
+
+        Returns:
+            Fiscal quarter string like "Q3 FY2024", or error message if parsing fails
+        """
+        for fmt in ["%Y-%m-%d", "%B %d, %Y", "%b %d, %Y", "%m/%d/%Y", "%d/%m/%Y"]:
+            try:
+                date = datetime.strptime(date_str.strip(), fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return f"Unable to parse date: '{date_str}'. Tried common formats."
+
+        info = get_fiscal_calendar_info(ticker)
+        fy_end_month = info.get('fy_end_month', 12) if info else 12
+
+        # Determine fiscal year
+        fy_year = date.year if date.month <= fy_end_month else date.year + 1
+
+        # Determine quarter: FY starts the month after fy_end_month
+        fy_start_month = (fy_end_month % 12) + 1
+        month_offset = (date.month - fy_start_month) % 12
+        quarter = (month_offset // 3) + 1
+
+        cal_note = f"(FY ends month {fy_end_month}, {'calendar year' if fy_end_month == 12 else 'non-calendar FY'})"
+        return f"Q{quarter} FY{fy_year} {cal_note}"
+
     # ===== AGENT CONFIGURATION =====
-    
+
     tools = [
         lookup_fiscal_calendar,
         infer_fiscal_year,
         get_current_fiscal_context,
-        # reason_about_ambiguous_period,  # LLM-powered, use sparingly
+        date_to_fiscal_quarter,
     ]
 
     system_prompt = """You are a financial reporting period normalization specialist.
@@ -213,6 +249,7 @@ STANDARD FORMATS (use exactly):
 - Fiscal Quarter: "Q1 FY2025" (with single space)
 - Half-Year: "H1 FY2025" or "H2 FY2025"
 - Multi-Year: "FY2021-FY2024" (hyphen, no spaces)
+- Open-ended: "FY2025+" (guidance starting from a year with no defined end)
 
 TOOL USAGE STRATEGY (use cheapest approach that works):
 
@@ -220,18 +257,22 @@ TOOL USAGE STRATEGY (use cheapest approach that works):
    - "Q1 2025" → output "Q1 FY2025" directly (fiscal is always implied)
    - "FY2025" → output "FY2025" directly
    - "First quarter 2024" → output "Q1 FY2024" directly
+   - "FY2025 and beyond" → output "FY2025+" directly
 
-2. NEED FISCAL CALENDAR - Use lookup_fiscal_calendar:
+2. POINT-IN-TIME DATES - Use date_to_fiscal_quarter:
+   - When the period is a specific date like "as of September 30, 2024" or "at December 31, 2023"
+   - Pass the ticker/company and the date string to get the correct fiscal quarter
+   - Example: "as of September 30, 2024" with ticker "MET" → call date_to_fiscal_quarter("MET", "September 30, 2024") → "Q3 FY2024"
+
+3. NEED FISCAL CALENDAR - Use lookup_fiscal_calendar:
    - When company has non-standard fiscal year (Apple, Walmart, etc.)
    - If company is UNKNOWN, assume calendar year (FY = Jan-Dec)
 
-3. NEED DATE CONTEXT - Use get_current_fiscal_context:
+4. NEED DATE CONTEXT - Use get_current_fiscal_context:
    - "Next quarter", "this year", "coming fiscal year"
-   - "for the coming year / quarter" means for the next fiscal period based on publication date and company fiscal calendar
    - Any relative time reference that needs the document date
-   - Works even for unknown companies (assumes calendar year)
 
-4. TRULY AMBIGUOUS - Return "None":
+5. TRULY AMBIGUOUS - Return "None":
    - Only if you genuinely cannot determine the period even with assumptions
    - Do NOT ask for clarification - just output "None"
 
@@ -239,10 +280,10 @@ CRITICAL RULES:
 - "Q1 2025" ALWAYS means fiscal → "Q1 FY2025"
 - Corporate guidance never uses calendar quarters
 - UNKNOWN COMPANIES: Always assume calendar year fiscal (FY = Jan-Dec)
-- Use the publication date + calendar year assumption to resolve "current quarter", "next year", etc.
+- Point-in-time balance sheet estimates ("as of [date]") → use date_to_fiscal_quarter
 
 OUTPUT FORMAT - STRICT:
-- Return ONLY the normalized period string (e.g., "Q1 FY2025", "FY2024")
+- Return ONLY the normalized period string (e.g., "Q1 FY2025", "FY2024", "FY2025+")
 - Or return "None" if truly impossible to determine
 - NEVER output explanations, questions, or reasoning
 - NEVER say "I need" or ask for information"""
@@ -336,6 +377,7 @@ Use tools if needed. Return ONLY the normalized period (e.g., "Q1 FY2025", "FY20
             r'(Q[1-4]\s+FY\d{4})',      # Q1 FY2025
             r'(H[1-2]\s+FY\d{4})',       # H1 FY2025
             r'(FY\d{4}-FY\d{4})',        # FY2021-FY2024
+            r'(FY\d{4}\+)',              # FY2025+
             r'(FY\d{4})',                # FY2025
         ]
         
@@ -379,6 +421,25 @@ def quick_normalize(raw_period: str) -> Optional[str]:
         return raw
     if re.match(r"^FY\d{4}-FY\d{4}$", raw):
         return raw
+    if re.match(r"^FY\d{4}\+$", raw):
+        return raw
+
+    # ===== OPEN-ENDED PATTERNS (FY2025+) =====
+
+    # "FY2025 and beyond", "FY2025 onwards", "FY2025+", "2025 and beyond", "2025 onwards"
+    m = re.match(r"^(?:FY)?(\d{4})\s*(?:\+|and\s+beyond|onwards|and\s+above|going\s+forward)$", raw, re.IGNORECASE)
+    if m:
+        return f"FY{m.group(1)}+"
+
+    # "fiscal years 2025 and beyond", "fiscal 2025+"
+    m = re.match(r"^[Ff]iscal\s+(?:[Yy]ear\s+)?(\d{4})\s*(?:\+|and\s+beyond|onwards)$", raw)
+    if m:
+        return f"FY{m.group(1)}+"
+
+    # "FY25+" → FY2025+
+    m = re.match(r"^FY(\d{2})\+$", raw, re.IGNORECASE)
+    if m:
+        return f"FY{2000 + int(m.group(1))}+"
 
     # ===== FISCAL YEAR PATTERNS =====
     

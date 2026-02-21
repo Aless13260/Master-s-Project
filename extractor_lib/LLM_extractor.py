@@ -18,7 +18,17 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 from uuid import uuid4
 import argparse
-from llama_index.core.llms import ChatMessage
+try:
+    from llama_index.core.llms import ChatMessage  # type: ignore[assignment]
+except ImportError:
+    # Fallback lightweight ChatMessage for environments without llama_index
+    class ChatMessage:  # type: ignore[no-redef]
+        def __init__(self, role: str, content: str):
+            self.role = role
+            self.content = content
+        def __repr__(self):
+            return f"ChatMessage(role={self.role!r})"
+
 from pydantic import BaseModel, Field
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -64,7 +74,7 @@ class MultiGuidanceExtraction(BaseModel):
 class LLMExtractor:
     """Extract financial guidance using an LLM with structured output."""
     
-    def __init__(self, provider: str = "deepseek", model: str = None, temperature: float = 0.0, max_retries: int = 3, verbose: bool = True, period_agent=None):
+    def __init__(self, provider: str = "deepseek", model: Optional[str] = None, temperature: float = 0.0, max_retries: int = 3, verbose: bool = True, period_agent=None):
         """
         Initialize the extractor.
         
@@ -85,10 +95,14 @@ class LLMExtractor:
             self.model = model
         elif provider == "deepseek":
             self.model = "deepseek-chat"
+        elif provider == "gemini":
+            self.model = "gemini-2.5-flash"
         elif provider == "openai":
-            self.model = "gpt-5"
+            self.model = "gpt-4.1-mini"
+        elif provider == "anthropic":
+            self.model = "claude-haiku-4-5-20251001"
         elif provider == "github":
-            self.model = "gpt-4o"
+            self.model = "gpt-4o-mini"
         else:
             self.model = "deepseek-chat"
         
@@ -96,11 +110,13 @@ class LLMExtractor:
         self.llm = setup_llm(provider=self.provider, model=self.model, temperature=self.temperature, verbose=self.verbose)
         
         # Tool LLM for agents (lazy-initialized) - MUST support function calling
-        # DeepSeek Reasoner (R1) does NOT support tools, so we force deepseek-chat for agents
+        # DeepSeek R1 does NOT support tools, so force deepseek-chat for agents
+        # Gemini: tool use is supported on all flash/pro models
+        # Anthropic: tool use supported on all models
         if provider == "deepseek":
             self._tool_llm_name = "deepseek-chat"
         else:
-            self._tool_llm_name = self.model  # Assume other providers' main models support tools
+            self._tool_llm_name = self.model
         self._tool_llm = None  # Lazy-initialized only when agent is needed
 
         self.max_retries = max_retries
@@ -123,6 +139,10 @@ class LLMExtractor:
         ✓ "anticipates operating margin of approximately 30%"
         ✓ "targeting 10% growth in FY2026"
         ✓ "plans to increase capital expenditures to $2 billion"
+        ✓ "expects free cash flow of at least $2 billion" → guided_range_low: 2.0, guided_range_high: null
+        ✓ "expects mid-single digit annual revenue growth for FY2025 and beyond" → reporting_period: "FY2025+"
+        ✓ "increased its Adjusted EBITDA outlook from at least $6.1B to more than $6.2B" → guided_range_low: 6.2, is_revision: true, revision_direction: "increased"
+        ✓ "expects revenue to grow 5-10% year-over-year" → unit: "%", guided_range_low: 5.0, guided_range_high: 10.0 (NOT an absolute dollar figure)
 
         HANDLING MULTIPLE ITEMS (CRITICAL):
         If a single sentence contains multiple metrics (e.g., "Revenue of $10B and EPS of $2.00"), you MUST create separate JSON objects for each metric.
@@ -144,10 +164,18 @@ class LLMExtractor:
         ✗ "targeting developer productivity enhancements" (Operational goal)
         ✗ "launching new product in Q3" (Product launch without revenue guidance)
 
+        EXAMPLES OF VAGUE LONG-TERM STATEMENTS (DO NOT extract these — no actionable time horizon):
+        ✗ "targeting mid-single digit revenue growth in fiscal years 2023 and beyond" (no specific period)
+        ✗ "long-term algorithm of high-single digit EPS growth annually" (no specific period)
+        ✗ "expects to grow revenue over the long term" (no specific period)
+        ✗ "aims to sustain operating margins above 20% over the long run" (no specific period)
+        EXCEPTION: Extract these ONLY if the statement anchors to a specific starting year with a "+" suffix (e.g., "FY2025 and beyond" → reporting_period: "FY2025+").
+
         Look for forward-looking verbs: expects, guidance, outlook, forecast, projects, anticipates, targets, will be, plans to
         REJECT operational metrics: headcount, employees, roles, team size, users, subscribers (unless explicitly revenue-related)
 
         Purely qualitative commentary without clear financial linkage is excluded.
+        MANDATORY: Do NOT extract any item where BOTH guided_range_low AND guided_range_high would be null AND no qualitative_direction with clear financial meaning exists. Items with no numeric value and no directional signal (e.g. "maintain disciplined approach", "focus on growth", "continue executing strategy") must be skipped entirely.
         
         Category definitions for financial guidance extraction:
 
@@ -161,15 +189,33 @@ class LLMExtractor:
         - ebitda: EBITDA or adjusted EBITDA, explicitly stated.
         - other: Financial metrics that don't fit above categories (e.g., average order value, gross merchandise value, ARPU, segment-specific losses). Use for dollar-denominated or ratio-based business metrics only. Exclude purely operational KPIs like unit volumes, subscriber counts, or delivery numbers.
 
+        GAAP vs Non-GAAP Classification (gaap_type field):
+        - "GAAP": Standard accounting metrics following Generally Accepted Accounting Principles. Use when the metric is explicitly labeled as GAAP, or when no adjustment qualifier is mentioned and the metric appears to follow standard accounting (e.g., "revenue", "net income", "EPS" without qualifiers).
+        - "non-GAAP": Adjusted or modified metrics that exclude certain items. Use when the text explicitly mentions: "non-GAAP", "adjusted", "core", "organic", "pro forma", "normalized", "excluding special items", etc.
+        - null: Use when the GAAP status is ambiguous or cannot be determined from context.
+
+        Examples:
+        - "Non-GAAP EPS of $2.50" → gaap_type: "non-GAAP"
+        - "Adjusted EBITDA guidance of $5B" → gaap_type: "non-GAAP"
+        - "Core operating margin of 25%" → gaap_type: "non-GAAP"
+        - "Revenue guidance of $10 billion" → gaap_type: "GAAP" (standard metric, no adjustment qualifier)
+        - "EPS of $3.00" → gaap_type: "GAAP" (no adjustment qualifier implies standard)
+        - "Organic revenue growth of 5%" → gaap_type: "non-GAAP" (organic = adjusted for acquisitions/divestitures)
+        - "Constant Currency Adjusted Operating Income down 5-10%" → gaap_type: "non-GAAP" (constant currency = FX-adjusted)
+        - "revenue growth excluding foreign exchange impact" → gaap_type: "non-GAAP"
+        - "underlying operating profit of $2B" → gaap_type: "non-GAAP" (underlying = adjusted)
+
         For each distinct FORWARD-LOOKING guidance item, create a JSON object with these exact fields:
         - guidance_type: MUST be one of: "revenue", "earnings", "EPS", "opex", "capex", "margin", "cash_flow", "ebitda", "other" (or null)
         - metric_name: The exact name of the metric as it appears in the text (e.g. "Total Revenue", "Adjusted EBITDA", "Capital Expenditures", "Organic Growth"). ALWAYS extract this.
+        - gaap_type: MUST be one of: "GAAP", "non-GAAP" (or null if ambiguous). See GAAP classification rules above.
         - statement_text: The exact sentence or text snippet from the document where this guidance was found. (string or null)
-        - reporting_period: The reporting period referenced (e.g., "Q2 2025", "FY2025", keep format consistent e.g. don't vary format to sometimes say full-year 2024, sometimes FY2024)  (or null)
+        - reporting_period: The reporting period referenced. Use standard formats: "Q2 FY2025", "FY2025", "H1 FY2025", "FY2024-FY2026". For open-ended guidance anchored to a start year, use "FY2025+" format. If no specific period is given, use null — do NOT invent a period.
         - current_value: Current/most-recent numeric value (number or null)
         - unit: MUST be one of: "million", "billion", "%", "USD", "units" (or null)
         - guided_range_low: The guided value (if single number) OR the low end of the range (if range). (number or null)
-        - guided_range_high: The high end of the range (if range). Leave null if single number. (number or null)
+          One-sided range rules: "at least X" / "more than X" / "above X" → low: X, high: null. "up to X" / "no more than X" → low: null, high: X. "approximately X" → low: X, high: null (single value, NOT a range).
+        - guided_range_high: The high end of the range (if range). Leave null if single number or one-sided. (number or null)
         - is_revision: true/false indicating if this is a revision to prior guidance, e.g. updated from our prior outlook of $94-99 billion would yield true (boolean)
         - revision_direction: "increased", "decreased" or null, compared to previous guidance ONLY (string or null)
         - qualitative_direction: when no value is being given, but a qualitative direction is indicated (e.g., "increase", "decrease", "improve", "decline") (string or null)
@@ -390,6 +436,7 @@ OUTPUT FORMAT: Return a JSON object with this exact structure:
         {
             "guidance_type": "revenue|earnings|EPS|opex|capex|margin|cash_flow|ebitda|other",
             "metric_name": "string",
+            "gaap_type": "GAAP|non-GAAP|null",
             "statement_text": "string",
             "reporting_period": "string or null",
             "current_value": "number or null",
@@ -416,15 +463,17 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
                 ]
                 
                 # Run extraction with regular LLM
-                response = self.llm.chat(messages)
+                response = self.llm.chat(messages)  # type: ignore[arg-type]
                 json_content = response.message.content
-                
+                if json_content is None:
+                    raise ValueError("LLM returned empty response")
+
                 # Clean markdown if present
                 if "```json" in json_content:
                     json_content = json_content.split("```json")[1].split("```")[0].strip()
                 elif "```" in json_content:
                     json_content = json_content.split("```")[1].split("```")[0].strip()
-                
+
                 # Parse JSON
                 result = MultiGuidanceExtraction.model_validate_json(json_content)
                 break  # Success!
@@ -591,7 +640,7 @@ If you find forward-looking guidance, extract it. Do not return an empty guidanc
     # REMOVED: extract_with_enhanced (deprecated in favor of extract_from_text + agentic normalization)
 
 
-def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: int = None, randomize: bool = False) -> List[Dict[str, Any]]:
+def load_candidates(candidates_path: Path = CANDIDATES_PATH, max_items: Optional[int] = None, randomize: bool = False) -> List[Dict[str, Any]]:
     """Load filtered candidate documents."""
     candidates = []
     with open(candidates_path, 'r', encoding='utf-8') as f:
@@ -636,20 +685,30 @@ def load_contents_for_candidates(
 def main():
     """Main extraction pipeline."""
     parser = argparse.ArgumentParser(description="Extract financial guidance using LLM")
-    parser.add_argument("--provider", default="deepseek", help="LLM provider (deepseek, github, openai)")
-    parser.add_argument("--model", default="deepseek-chat", help="Model name")
+    parser.add_argument("--provider", default="gemini", help="LLM provider (deepseek, github, openai, gemini, anthropic)")
+    parser.add_argument("--model", default=None, help="Model name (default: provider's recommended model)")
     parser.add_argument("--max-items", type=int, help="Limit number of candidates to process (for testing)")
     parser.add_argument("--random", action="store_true", help="Randomly sample max-items instead of taking the first N")
     parser.add_argument("--max-retries", type=int, default=3, help="Max retry attempts for LLM calls")
-    parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="Output file path")
+    parser.add_argument("--output", type=Path, default=None, help="Output file path (default: extractor_lib/extracted_guidance.jsonl)")
+    parser.add_argument("--test", action="store_true", help="Write to a timestamped test file instead of the main output")
     parser.add_argument("--enhanced", action="store_true", help="Enable agentic period normalization (slower but more accurate)")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers to use")
     parser.add_argument("--resume", action="store_true", help="Resume from previous run, skip already-processed UIDs")
-    
+
     args = parser.parse_args()
 
+    # Resolve output path
+    if args.output is not None:
+        pass
+    elif args.test:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        args.output = OUTPUT_PATH.with_name(f"test_{ts}.jsonl")
+    else:
+        args.output = OUTPUT_PATH
+
     # If using default output path and enhanced mode is on, switch to agentic filename
-    if args.enhanced and args.output == OUTPUT_PATH:
+    if not args.test and args.output == OUTPUT_PATH and args.enhanced:
         args.output = OUTPUT_PATH.with_name("extracted_guidance_agentic.jsonl")
     
     print("=" * 60)
@@ -678,9 +737,9 @@ def main():
         print("Pre-creating shared period normalization agent...")
         shared_agent = extractor.period_agent  # Triggers lazy creation once
         if shared_agent:
-            print("  ✓ Agent ready for all workers")
+            print("  [OK] Agent ready for all workers")
         else:
-            print("  ✗ Agent creation failed, falling back to regex normalization")
+            print("  [WARN] Agent creation failed, falling back to regex normalization")
     print()
     
     # Load data
@@ -819,13 +878,13 @@ def main():
                         for record in records:
                             output_file.write(json.dumps(record) + '\n')
                         output_file.flush()  # Ensure written to disk
-                    print(f"  ✓ Extracted {len(records)} items (saved)")
+                    print(f"  [OK] Extracted {len(records)} items (saved)")
                 else:
                     error_count += 1
-                    print(f"  ✗ {error_msg}")
+                    print(f"  [FAIL] {error_msg}")
             except Exception as e:
                 error_count += 1
-                print(f"  ✗ Critical error in thread: {e}")
+                print(f"  [ERROR] Critical error in thread: {e}")
         
     # Close output file
     output_file.close()

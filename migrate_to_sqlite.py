@@ -64,6 +64,7 @@ def create_tables(conn):
             ticker TEXT,
             guidance_type TEXT,
             metric_name TEXT,
+            gaap_type TEXT,
             reporting_period TEXT,
             current_value REAL,
             unit TEXT,
@@ -198,12 +199,12 @@ def migrate_guidance(conn, file_path):
                 c.execute('''
                     INSERT OR REPLACE INTO guidance (
                         guid, content_uid, source_id, ticker, guidance_type, metric_name,
-                        reporting_period, current_value, unit, 
-                        guided_range_low, guided_range_high, 
+                        gaap_type, reporting_period, current_value, unit,
+                        guided_range_low, guided_range_high,
                         is_revision, revision_direction, qualitative_direction, rationales,
                         statement_text, source_type, extracted_at,
                         extraction_method, processing_duration_seconds, was_updated_by_agent
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     guid_id,
                     row_uid,  # content_uid comes from the top level 'uid'
@@ -211,6 +212,7 @@ def migrate_guidance(conn, file_path):
                     ticker,
                     g.get('guidance_type'),
                     g.get('metric_name'),
+                    g.get('gaap_type'),  # New field: GAAP, non-GAAP, or null
                     g.get('reporting_period'),
                     g.get('current_value'),
                     g.get('unit'),
